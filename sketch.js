@@ -148,31 +148,37 @@ const REEF_SWAY_SPEED = 0.034;
 // too prominent/bulky — scale every coral/Fish Bone down uniformly.
 const REEF_SCALE = 0.65;
 
-// Background fish school: purely ambient, not a design focal point — a
+// Background fish: purely ambient, not a design focal point — a
 // procedurally-drawn vector fish never looked right (tried rounded-corner
 // polygons, tuned proportions, still read as off), so same as the reef, it's
-// 3 hand-drawn PNG silhouettes exported straight from Figma instead. Each
-// instance is one of the 3 shapes, tinted down to a low, near-black alpha so
-// it blends into the water as a shadow rather than reading as a subject, and
-// travels in a dead-straight line — the whole school shares one heading
-// (left-to-right or right-to-left, picked once per load) rather than
-// flocking or wandering, which read as fish "loitering" in one spot.
+// 3 hand-drawn PNG silhouettes exported straight from Figma instead. Split
+// into 3 depth layers exactly like the reef (back/mid/front, drawn behind
+// their matching rock layer so the rock naturally occludes whichever fish
+// pass behind it) — each layer gets its own size/opacity/speed tier for a
+// simple parallax read (farther = smaller, dimmer, slower).
+//
+// Each fish's left/right heading is random, but two fish on the exact same
+// horizontal line swimming toward each other reads as a glitch. Instead of
+// checking every pair for collisions, each layer is pre-divided into a fixed
+// number of horizontal "lanes" spanning the swim band, one fish per lane —
+// so no two fish ever share a line by construction, and each fish's own
+// direction is free to be random independently.
 const FISH_ASSET_FILES = {
   BackFish1: 'BackFish1.png',
   BackFish2: 'BackFish2.png',
   BackFish3: 'BackFish3.png'
 };
-const FISH_COUNT = 14;
-const FISH_SIZE = 42;   // px, displayed body height at depth z = 1
-const FISH_SPEED = 1.0; // px/frame multiplier
-const FISH_OPACITY = 0.38;
+const FISH_LAYER_DEFS = {
+  back:  { count: 4, size: 28, speed: 0.55, opacity: 0.20 },
+  mid:   { count: 4, size: 38, speed: 0.90, opacity: 0.30 },
+  front: { count: 4, size: 48, speed: 1.30, opacity: 0.42 }
+};
 
 let stoneImgs = {};
 let kelps = [];
 let coralImgs = {};
 let fishImgs = {};
-let fishSchool = [];
-let fishSwimDirection = 1; // 1 = left-to-right, -1 = right-to-left; fixed for the whole school
+let fishBack = [], fishMid = [], fishFront = [];
 let reefBack = [], reefMid = [], reefFront = [];
 let bodyImg, headImg, hand1Img, hand2Img, mouthImg, boatImg, rodImg, hookImg;
 let blinkTimer = 90, blinking = false, blinkT = 0;
@@ -218,7 +224,9 @@ function setup() {
   // once a Kelp PNG is exported.
   kelps = [];
   buildReef();
-  buildFishSchool();
+  fishBack = buildFishLayer(FISH_LAYER_DEFS.back);
+  fishMid = buildFishLayer(FISH_LAYER_DEFS.mid);
+  fishFront = buildFishLayer(FISH_LAYER_DEFS.front);
   hookSwayPhase = random(TWO_PI);
 }
 
@@ -229,47 +237,57 @@ function fishSwimBand() {
   return { top: HORIZON_Y + waterH * 0.22, bottom: HORIZON_Y + waterH * 0.85 };
 }
 
-function buildFishSchool() {
+function buildFishLayer(def) {
   const band = fishSwimBand();
   const names = Object.keys(FISH_ASSET_FILES);
-  fishSwimDirection = random() < 0.5 ? 1 : -1;
-  fishSchool = [];
-  for (let i = 0; i < FISH_COUNT; i++) {
-    const z = random(0.55, 1.35); // depth: smaller/dimmer/slower = farther away
-    fishSchool.push({
+  const laneH = (band.bottom - band.top) / def.count;
+  const fish = [];
+  for (let i = 0; i < def.count; i++) {
+    // one fish per lane (see the comment above FISH_LAYER_DEFS) — jitter
+    // stays inside the lane's own slice so it can never drift onto a
+    // neighboring lane's line
+    const laneTop = band.top + i * laneH;
+    fish.push({
       x: random(CANVAS_W),
-      y: random(band.top, band.bottom),
-      z,
+      y: laneTop + laneH * random(0.2, 0.8),
+      z: random(0.8, 1.2),
       name: random(names),
-      speedMul: map(z, 0.55, 1.35, 0.6, 1.3),
-      opacityMul: map(z, 0.55, 1.35, 0.55, 1.05)
+      dir: random() < 0.5 ? 1 : -1,
+      speedMul: random(0.85, 1.2),
+      opacityMul: random(0.85, 1.15)
     });
   }
+  return fish;
 }
 
-function updateFishSchool() {
-  const baseSpeed = 1.3 * FISH_SPEED;
+function updateFishLayer(layer, def) {
+  const baseSpeed = 1.3 * def.speed;
   const margin = 140;
-  fishSchool.forEach(f => {
-    f.x += fishSwimDirection * baseSpeed * f.speedMul;
-    if (fishSwimDirection === 1 && f.x > CANVAS_W + margin) f.x = -margin;
-    if (fishSwimDirection === -1 && f.x < -margin) f.x = CANVAS_W + margin;
+  layer.forEach(f => {
+    f.x += f.dir * baseSpeed * f.speedMul;
+    if (f.dir === 1 && f.x > CANVAS_W + margin) f.x = -margin;
+    if (f.dir === -1 && f.x < -margin) f.x = CANVAS_W + margin;
   });
 }
 
-function drawFishInstance(f) {
+function drawFishInstance(f, def) {
   const img = fishImgs[f.name];
-  const dispH = FISH_SIZE * f.z;
+  const dispH = def.size * f.z;
   const dispW = dispH * (img.width / img.height);
   push();
   translate(f.x, f.y);
   // mirror horizontally only when swimming right-to-left — the art has an
   // asymmetric dorsal fin, so rotate(PI) would flip it upside-down too
-  if (fishSwimDirection === -1) scale(-1, 1);
+  if (f.dir === -1) scale(-1, 1);
   imageMode(CENTER);
-  tint(255, 255, 255, 255 * FISH_OPACITY * f.opacityMul);
+  tint(255, 255, 255, 255 * def.opacity * f.opacityMul);
   image(img, 0, 0, dispW, dispH);
   pop();
+}
+
+function drawFishLayer(layer, def) {
+  updateFishLayer(layer, def);
+  layer.forEach(f => drawFishInstance(f, def));
 }
 
 // Picks one hand-built preset per rock layer into reefBack/reefMid/reefFront
@@ -373,12 +391,13 @@ function drawReefInstance(inst) {
 function draw() {
   fillGradientRect(0, 0, CANVAS_W, HORIZON_Y, PALETTE.blackPearl[0], PALETTE.blackPearl[2]);
   fillGradientRect(0, HORIZON_Y, CANVAS_W, CANVAS_H - HORIZON_Y, PALETTE.oceanBlue[2], PALETTE.oceanBlue[3]);
-  updateFishSchool();
-  fishSchool.forEach(drawFishInstance);
+  drawFishLayer(fishBack, FISH_LAYER_DEFS.back);
   reefBack.forEach(drawReefInstance);
   drawStone('3rd');
+  drawFishLayer(fishMid, FISH_LAYER_DEFS.mid);
   reefMid.forEach(drawReefInstance);
   drawStone('2nd');
+  drawFishLayer(fishFront, FISH_LAYER_DEFS.front);
   reefFront.forEach(drawReefInstance);
   drawStone('1st');
   kelps.forEach(drawTracedShape);
