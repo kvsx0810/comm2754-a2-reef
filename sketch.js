@@ -195,24 +195,47 @@ function buildReef() {
 
 function buildReefLayer(presets) {
   const preset = random(presets);
-  return preset.map(def => ({
-    buf: scaleToDisplaySize(coralImgs[def.name], def.w, def.h),
-    baseX: def.x, baseY: def.y + def.h, w: def.w, h: def.h,
-    speedMul: random(0.7, 1.3),
-    ampMul: random(0.75, 1.3),
-    stiffExp: random(1.2, 2.2),
-    phase: random(TWO_PI),
-    flutter: random() > 0.3
-  }));
+  return preset.map(def => {
+    const img = coralImgs[def.name];
+    // def.w/def.h come from that specific placement's own Figma
+    // renderBounds, which isn't always the same aspect ratio as the
+    // exported PNG (different placements were sometimes scaled slightly
+    // non-uniformly in Figma) — forcing both independently stretched the
+    // image. Height stays authoritative (it drives the "half exposed above
+    // the rock line" placement); width is derived from the PNG's own real
+    // aspect ratio so nothing gets squished.
+    const h = def.h;
+    const w = h * (img.width / img.height);
+    const centerX = def.x + def.w / 2;
+    return {
+      buf: scaleToDisplaySize(img, w, h),
+      baseX: centerX - w / 2, baseY: def.y + h, w, h,
+      speedMul: random(0.7, 1.3),
+      ampMul: random(0.75, 1.3),
+      stiffExp: random(1.2, 2.2),
+      phase: random(TWO_PI),
+      flutter: random() > 0.3
+    };
+  });
 }
 
-// Downscales to the actual on-canvas display size once, with high-quality
-// resampling — re-resampling a full-res source on every strip, every frame,
-// is what made an earlier version of the reef sway laggy.
+// The strip-sway animation slices this buffer into REEF_STRIPS horizontal
+// bands every frame. Pre-scaling all the way down to the final on-canvas
+// size (as an earlier version did) left each strip only a couple of source
+// pixels tall once sliced 30 ways, which read as blocky/pixelated once the
+// PNGs carried real detailed artwork instead of a flat recolor. Oversampling
+// the buffer here — capped at the source's own native resolution, no point
+// upscaling past real detail — keeps each strip's source slice thick enough
+// to resample cleanly, while still being far smaller than re-resampling the
+// full native image on every strip, every frame (the original lag cause).
+const REEF_SLICE_OVERSAMPLE = 3;
+
 function scaleToDisplaySize(img, dispW, dispH) {
-  const small = createGraphics(Math.ceil(dispW), Math.ceil(dispH));
+  const bufH = Math.min(Math.ceil(dispH * REEF_SLICE_OVERSAMPLE), img.height);
+  const bufW = Math.round(bufH * (dispW / dispH));
+  const small = createGraphics(bufW, bufH);
   small.drawingContext.imageSmoothingQuality = 'high';
-  small.image(img, 0, 0, small.width, small.height);
+  small.image(img, 0, 0, bufW, bufH);
   return small;
 }
 
