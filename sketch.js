@@ -58,6 +58,12 @@ const KELP_DEFS = [
   { name: 'kelpR', paths: RAW_PATHS.kelp, x: 1426, y: 798, w: 149, h: 231, rot: 0.657, top: PALETTE.blackPearl[3], bottom: PALETTE.oceanBlue[3] }
 ];
 
+// The 3rd/back rock layer's own gradient — pulled out as constants (instead
+// of inline strings only in setup()) so the reef's back-layer coral color
+// below can reuse the exact same values, never an approximation of them.
+const RIDGE3RD_TOP = 'rgba(6,62,121,0.59)';
+const RIDGE3RD_BOTTOM = 'rgba(56,148,245,0)';
+
 // Coral reef: generative, differs every reload. Corals are recolored PNG
 // silhouettes (source-in mask + vertical gradient — tint()/multiply doesn't
 // work on pure-black source pixels) scattered across all 3 rock layers, each
@@ -66,16 +72,20 @@ const KELP_DEFS = [
 // out of the rock" depth cue real reef photos show, and it also means a
 // back-layer coral gets naturally re-occluded by every nearer layer drawn
 // after it. Each layer's coral color matches that same layer's own rock
-// gradient exactly (not lightened for contrast) — this is deliberate,
-// matching the original hand-drawn Figma scene where corals camouflage into
-// the rock layer nearest them rather than popping out against it.
+// gradient EXACTLY — not an approximation, the literal same values the rock
+// itself uses — which is the real rule validated against the Figma file:
+// the two coral colors that exist there are pixel-identical to ridge1st's
+// and ridge2nd's own top/bottom. The back layer had no coral in the original
+// (fixed-position) design to validate against, so it follows the same rule
+// by construction: matches ridge3rd's own gradient exactly, translucency
+// included, rather than inventing an unvalidated color for it.
 const CORAL_FILES = ['Coral.png', 'Coral2.png', 'Coral3.png', 'Coral4.png', 'Coral7.png'];
 const FISH_BONE_FILE = 'Fish Bone.png';
 const REEF_STRIPS = 30;
 const REEF_SWAY_AMP = 16;
 const REEF_SWAY_SPEED = 0.024;
-const REEF_BACK_TOP = PALETTE.blackPearl[2];
-const REEF_BACK_BOTTOM = PALETTE.oceanBlue[1];
+const REEF_BACK_TOP = RIDGE3RD_TOP;
+const REEF_BACK_BOTTOM = RIDGE3RD_BOTTOM;
 const REEF_MID_TOP = PALETTE.blackPearl[1];
 const REEF_MID_BOTTOM = PALETTE.blackPearl[2];
 const REEF_FRONT_TOP = PALETTE.blackPearl[0];
@@ -119,7 +129,7 @@ function setup() {
   drawingContext.imageSmoothingQuality = 'high';
   // Valley depth steps evenly between adjacent layers (0.09 * CANVAS_H each)
   // so 3rd->2nd and 2nd->1st read as the same "step down" in the scene.
-  ridge3rd = makeRidge(HORIZON_Y + 6, CANVAS_H * 0.72, 0.15, CANVAS_H * 0.90, 'rgba(6,62,121,0.59)', 'rgba(56,148,245,0)');
+  ridge3rd = makeRidge(HORIZON_Y + 6, CANVAS_H * 0.72, 0.15, CANVAS_H * 0.90, RIDGE3RD_TOP, RIDGE3RD_BOTTOM);
   ridge2nd = makeRidge(CANVAS_H * 0.47, CANVAS_H * 0.81, 0.14, CANVAS_H * 0.97, PALETTE.blackPearl[1], PALETTE.blackPearl[2]);
   ridge1st = makeRidge(CANVAS_H * 0.55, CANVAS_H * 0.90, 0.13, CANVAS_H, PALETTE.blackPearl[0], PALETTE.blackPearl[1]);
   kelps = KELP_DEFS.map(makeTracedInstance);
