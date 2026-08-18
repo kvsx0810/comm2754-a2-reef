@@ -65,23 +65,21 @@ const KELP_DEFS = [
 // covers its root and only the upper body reads in front — the same "grows
 // out of the rock" depth cue real reef photos show, and it also means a
 // back-layer coral gets naturally re-occluded by every nearer layer drawn
-// after it. Each layer's coral color is one PALETTE shade LIGHTER than that
-// layer's own rock gradient (not an exact match) — matching exactly made
-// corals camouflage into invisibility against their own background, which
-// reads as "reef disappeared" instead of "reef scattered across depth".
-// The lighter-with-distance ladder across layers is kept so front still
-// reads nearer/more saturated than the hazy back layer.
+// after it. Each layer's coral color matches that same layer's own rock
+// gradient exactly (not lightened for contrast) — this is deliberate,
+// matching the original hand-drawn Figma scene where corals camouflage into
+// the rock layer nearest them rather than popping out against it.
 const CORAL_FILES = ['Coral.png', 'Coral2.png', 'Coral3.png', 'Coral4.png', 'Coral7.png'];
 const FISH_BONE_FILE = 'Fish Bone.png';
 const REEF_STRIPS = 30;
 const REEF_SWAY_AMP = 16;
 const REEF_SWAY_SPEED = 0.024;
-const REEF_BACK_TOP = PALETTE.oceanBlue[1];
-const REEF_BACK_BOTTOM = PALETTE.oceanBlue[2];
-const REEF_MID_TOP = PALETTE.blackPearl[2];
-const REEF_MID_BOTTOM = PALETTE.oceanBlue[1];
-const REEF_FRONT_TOP = PALETTE.blackPearl[1];
-const REEF_FRONT_BOTTOM = PALETTE.blackPearl[2];
+const REEF_BACK_TOP = PALETTE.blackPearl[2];
+const REEF_BACK_BOTTOM = PALETTE.oceanBlue[1];
+const REEF_MID_TOP = PALETTE.blackPearl[1];
+const REEF_MID_BOTTOM = PALETTE.blackPearl[2];
+const REEF_FRONT_TOP = PALETTE.blackPearl[0];
+const REEF_FRONT_BOTTOM = PALETTE.blackPearl[1];
 
 let ridge3rd, ridge2nd, ridge1st;
 let kelps = [];
