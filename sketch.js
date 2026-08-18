@@ -64,6 +64,16 @@ const KELP_DEFS = [
 const RIDGE3RD_TOP = 'rgba(6,62,121,0.59)';
 const RIDGE3RD_BOTTOM = 'rgba(56,148,245,0)';
 
+// In the real Figma file the 1st layer's 2nd gradient stop is dragged far
+// below the canvas, so within the visible shape the color barely drifts off
+// the dark stop — measured directly off a real Figma render, it only
+// reaches ~24% of the way from blackPearl[0] to blackPearl[1] even at the
+// very floor. This is that pre-blended color, used as the "bottom" of the
+// gradient in place of the full blackPearl[1] — the on-canvas gradient
+// geometry itself is unchanged, only how far along the dark->light range it
+// actually ends up.
+const RIDGE1ST_BOTTOM = '#02182F';
+
 // Coral reef: generative, differs every reload. Each rock layer has a few
 // hand-built presets — fixed compositions the artist laid out and colored
 // directly in Figma, one exported PNG per coral (already colored, no
@@ -140,6 +150,10 @@ const REEF_PRESETS = {
 const REEF_STRIPS = 50;
 const REEF_SWAY_AMP = 5;
 const REEF_SWAY_SPEED = 0.024;
+// Preset sizes come straight from each placement's real Figma renderBounds
+// (verified accurate), but rendered at that literal size the reef reads as
+// too prominent/bulky — scale every coral/Fish Bone down uniformly.
+const REEF_SCALE = 0.65;
 
 let ridge3rd, ridge2nd, ridge1st;
 let kelps = [];
@@ -181,7 +195,7 @@ function setup() {
   // so 3rd->2nd and 2nd->1st read as the same "step down" in the scene.
   ridge3rd = makeRidge(HORIZON_Y + 6, CANVAS_H * 0.72, 0.15, CANVAS_H * 0.90, RIDGE3RD_TOP, RIDGE3RD_BOTTOM);
   ridge2nd = makeRidge(CANVAS_H * 0.47, CANVAS_H * 0.81, 0.14, CANVAS_H * 0.97, PALETTE.blackPearl[1], PALETTE.blackPearl[2]);
-  ridge1st = makeRidge(CANVAS_H * 0.55, CANVAS_H * 0.90, 0.13, CANVAS_H, PALETTE.blackPearl[0], PALETTE.blackPearl[1]);
+  ridge1st = makeRidge(CANVAS_H * 0.55, CANVAS_H * 0.90, 0.13, CANVAS_H, PALETTE.blackPearl[0], RIDGE1ST_BOTTOM);
   // Kelp temporarily off — no PNG export exists yet for it, and leaving it
   // as the lone vector-drawn shape reads as an unfinished leftover next to
   // the PNG-based reef. Re-enable via `kelps = KELP_DEFS.map(makeTracedInstance);`
@@ -210,8 +224,11 @@ function buildReefLayer(presets) {
     // non-uniformly in Figma) — forcing both independently stretched the
     // image. Height stays authoritative (it drives the "half exposed above
     // the rock line" placement); width is derived from the PNG's own real
-    // aspect ratio so nothing gets squished.
-    const h = def.h;
+    // aspect ratio so nothing gets squished. The base/root position keeps
+    // the original full-size def.y + def.h anchor (where it was designed to
+    // sit against the rock line) — only the rendered bulk shrinks by
+    // REEF_SCALE, not where it's rooted.
+    const h = def.h * REEF_SCALE;
     const w = h * (img.width / img.height);
     const centerX = def.x + def.w / 2;
     // Fish Bone is a rigid skeleton, not a living organism — it shouldn't
@@ -219,7 +236,7 @@ function buildReefLayer(presets) {
     const noSway = def.name === 'Fish Bone';
     return {
       buf: scaleToDisplaySize(img, w, h),
-      baseX: centerX - w / 2, baseY: def.y + h, w, h,
+      baseX: centerX - w / 2, baseY: def.y + def.h, w, h,
       speedMul: random(0.7, 1.3),
       ampMul: noSway ? 0 : random(0.75, 1.3),
       stiffExp: random(1.2, 2.2),
@@ -354,35 +371,32 @@ function makeRidge(edgeY, plateauY, edgeZoneFrac, floorY, topCss, bottomCss) {
   const amp = (plateauY - edgeY) * 0.28;
   const noiseOffset = random(1000);
   const noiseOffset2 = random(1000);
-  const noiseScale = 0.012;
-  const noiseScale2 = 0.05;
+  const noiseScale = 0.01;
+  const noiseScale2 = 0.035;
   const points = [];
   let x = -300;
   while (x < CANVAS_W + 300) {
     const base = ridgeEnvelope(x, edgeY, plateauY, edgeZonePx);
     const jag = (noise(x * noiseScale + noiseOffset) - 0.5) * 2 * amp;
-    const fineJag = (noise(x * noiseScale2 + noiseOffset2) - 0.5) * 2 * amp * 0.25;
+    const fineJag = (noise(x * noiseScale2 + noiseOffset2) - 0.5) * 2 * amp * 0.12;
     // Rock is underwater — never let a peak, including jag noise, break the
     // surface and poke up into the sky.
     const y = Math.max(base + jag + fineJag, HORIZON_Y);
     points.push({ x, y });
-    // Denser vertices than before — sharper, more frequent corners need the
-    // room to actually read as jagged instead of getting smoothed away.
-    x += random(12, 28);
+    x += random(18, 40);
   }
   return { points, floorY, topCss, bottomCss, topY: Math.min(...points.map(p => p.y)) };
 }
 
-// Rounds each interior peak/valley by a small fixed radius — small enough to
-// keep corners looking sharp/angular (rock), not the smooth round-hill look
-// a larger radius produced.
+// Rounds each interior peak/valley by a small fixed radius so the silhouette
+// stays jagged and rocky instead of turning into smooth round hills.
 function drawRidge(r) {
   const g = drawingContext.createLinearGradient(0, r.topY, 0, r.floorY);
   g.addColorStop(0, r.topCss);
   g.addColorStop(1, r.bottomCss);
   drawingContext.fillStyle = g;
   const pts = r.points;
-  const radius = 4;
+  const radius = 7;
   drawingContext.beginPath();
   drawingContext.moveTo(pts[0].x, r.floorY);
   drawingContext.lineTo(pts[0].x, pts[0].y);
