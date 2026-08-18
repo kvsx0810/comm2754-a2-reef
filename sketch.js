@@ -119,19 +119,16 @@ const REEF_PRESETS = {
       { name: 'Coral5', x: 1613.78, y: 685.63, w: 121.82, h: 127.65 }
     ]
   ],
+  // The 3-coral composition (Coral9 + Coral8 + Coral8) was dropped —
+  // remaining 2 nudged up 20px (smaller y) from their raw Figma position.
   '3rd': [
     [
-      { name: 'Coral9', x: 65, y: 689, w: 149, h: 231 },
-      { name: 'Coral8', x: 1469.7, y: 744.22, w: 160.65, h: 217.03 }
+      { name: 'Coral9', x: 65, y: 669, w: 149, h: 231 },
+      { name: 'Coral8', x: 1469.7, y: 724.22, w: 160.65, h: 217.03 }
     ],
     [
-      { name: 'Coral9', x: 776.04, y: 675.22, w: 141.83, h: 230.7 },
-      { name: 'Coral8', x: 1523.7, y: 558.22, w: 160.65, h: 217.03 },
-      { name: 'Coral8', x: 53.02, y: 572.45, w: 189.2, h: 287.89 }
-    ],
-    [
-      { name: 'Coral9', x: 589.15, y: 699.59, w: 141.87, h: 226.65 },
-      { name: 'Coral8', x: 1648.31, y: 607.89, w: 144.25, h: 221.27 }
+      { name: 'Coral9', x: 589.15, y: 679.59, w: 141.87, h: 226.65 },
+      { name: 'Coral8', x: 1648.31, y: 587.89, w: 144.25, h: 221.27 }
     ]
   ]
 };
@@ -203,12 +200,17 @@ function setup() {
 // so draw() can slot each one in right before its own layer is painted on
 // top of it (see draw() below for why).
 function buildReef() {
-  reefBack = buildReefLayer(REEF_PRESETS['3rd']);
+  // 3rd/back layer sways noticeably stronger and faster than mid/front —
+  // it reads as thinner, more delicate growth further from the character,
+  // more sensitive to the current.
+  reefBack = buildReefLayer(REEF_PRESETS['3rd'], { ampBoost: 1.8, speedBoost: 1.6 });
   reefMid = buildReefLayer(REEF_PRESETS['2nd']);
   reefFront = buildReefLayer(REEF_PRESETS['1st']);
 }
 
-function buildReefLayer(presets) {
+function buildReefLayer(presets, opts = {}) {
+  const ampBoost = opts.ampBoost || 1;
+  const speedBoost = opts.speedBoost || 1;
   const preset = random(presets);
   return preset.map(def => {
     const img = coralImgs[def.name];
@@ -231,8 +233,8 @@ function buildReefLayer(presets) {
     return {
       buf: scaleToDisplaySize(img, w, h),
       baseX: centerX - w / 2, baseY: def.y + def.h, w, h,
-      speedMul: random(0.7, 1.3),
-      ampMul: noSway ? 0 : random(0.75, 1.3),
+      speedMul: random(0.7, 1.3) * speedBoost,
+      ampMul: noSway ? 0 : random(0.75, 1.3) * ampBoost,
       stiffExp: random(1.2, 2.2),
       phase: random(TWO_PI),
       flutter: !noSway && random() > 0.3
