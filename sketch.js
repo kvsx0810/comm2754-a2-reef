@@ -65,9 +65,9 @@ function setup() {
   canvas.parent('sketch-holder');
   frameRate(30);
   noStroke();
-  ridge3rd = makeRidge(CANVAS_H * 0.44, CANVAS_H * 0.66, 22, CANVAS_H * 0.90, 'rgba(6,62,121,0.59)', 'rgba(56,148,245,0)');
-  ridge2nd = makeRidge(CANVAS_H * 0.52, CANVAS_H * 0.72, 20, CANVAS_H * 0.97, PALETTE.blackPearl[1], PALETTE.blackPearl[2]);
-  ridge1st = makeRidge(CANVAS_H * 0.60, CANVAS_H * 0.80, 18, CANVAS_H, PALETTE.blackPearl[0], PALETTE.blackPearl[1]);
+  ridge3rd = makeRidge(CANVAS_H * 0.40, CANVAS_H * 0.68, 0.08, CANVAS_H * 0.90, 'rgba(6,62,121,0.59)', 'rgba(56,148,245,0)');
+  ridge2nd = makeRidge(CANVAS_H * 0.47, CANVAS_H * 0.72, 0.09, CANVAS_H * 0.97, PALETTE.blackPearl[1], PALETTE.blackPearl[2]);
+  ridge1st = makeRidge(CANVAS_H * 0.55, CANVAS_H * 0.79, 0.10, CANVAS_H, PALETTE.blackPearl[0], PALETTE.blackPearl[1]);
   corals = CORAL_DEFS.map(makeCoralInstance);
   fishBone = makeCoralInstance(FISH_BONE_DEF);
 }
@@ -93,22 +93,42 @@ function fillGradientRect(x, y, w, h, hexTop, hexBottom) {
   drawingContext.fillRect(x, y, w, h);
 }
 
-// A ridge is one continuous random line (loop + randomization = generative,
-// differs every load): tall near the two edges, low across the middle
-// (open water for fish later), blended with a smoothstep so there is no
-// seam — just a single silhouette that happens to rise at the sides.
-function edgeRise(x) {
-  const t = constrain(Math.abs(x / CANVAS_W - 0.5) * 2, 0, 1);
+// Traced from the real Figma rock layers: height only rises near the two
+// frame edges — measured on the real path, the climb from the flat middle to
+// full edge height completes within roughly the outer 5-15% of the width, and
+// the remaining ~80-90% across the middle sits at a fairly steady low plateau
+// rather than curving gradually. A transition spread across half the canvas
+// (an earlier version of this function) reads as a mountain slope; a narrow
+// edge climb plus a long flat plateau reads as a rock shelf, which is what
+// the source data actually shows.
+function edgeFactor(x, edgeZonePx) {
+  const cx = constrain(x, 0, CANVAS_W);
+  const d = Math.min(cx, CANVAS_W - cx);
+  const t = constrain(1 - d / edgeZonePx, 0, 1);
   return t * t * (3 - 2 * t); // smoothstep
 }
 
-function makeRidge(edgeY, centerY, amp, floorY, topCss, bottomCss) {
-  const n = 30;
+function ridgeEnvelope(x, edgeY, plateauY, edgeZonePx) {
+  return lerp(plateauY, edgeY, edgeFactor(x, edgeZonePx));
+}
+
+// Loop + randomization = generative (differs every load) while the overall
+// silhouette (narrow tall edges, long low plateau) stays recognizable:
+// noise() gives correlated jaggedness (a bump leans on its neighbors instead
+// of flipping direction every single point, matching the hand-drawn original)
+// and irregular step spacing avoids the evenly-spaced-comb look.
+function makeRidge(edgeY, plateauY, edgeZoneFrac, floorY, topCss, bottomCss) {
+  const edgeZonePx = CANVAS_W * edgeZoneFrac;
+  const amp = (plateauY - edgeY) * 0.28;
+  const noiseOffset = random(1000);
+  const noiseScale = 0.006;
   const points = [];
-  for (let i = 0; i <= n; i++) {
-    const x = map(i, 0, n, -100, CANVAS_W + 100);
-    const baseY = lerp(centerY, edgeY, edgeRise(x));
-    points.push({ x, y: baseY + random(-amp, amp) });
+  let x = -300;
+  while (x < CANVAS_W + 300) {
+    const base = ridgeEnvelope(x, edgeY, plateauY, edgeZonePx);
+    const jag = (noise(x * noiseScale + noiseOffset) - 0.5) * 2 * amp;
+    points.push({ x, y: base + jag });
+    x += random(25, 65);
   }
   return { points, floorY, topCss, bottomCss, topY: Math.min(...points.map(p => p.y)) };
 }
