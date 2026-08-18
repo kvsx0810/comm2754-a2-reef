@@ -41,6 +41,50 @@ const RAW_PATHS = {
   fishBone: ["M 0.06320074338449534 2.4361368984612475 C 0.04846896318919884 2.847878910709563 -0.27397734740945845 12.627982533245445 0.6934094886646096 22.96418317039475 C 2.092928582826597 37.92633006397959 5.432103331680668 45.975803112104956 10.894319663318418 47.56371658595392 L 12.284055903862491 47.96889717429344 L 24.814220924282107 35.155684956151966 L 29.544743058459815 39.853808870211395 C 29.544743058459815 39.853808870211395 11.319917270537495 57.086274532707876 15.818020569833084 61.70565901324158 C 20.352135085765443 66.3627727665627 38.130128812241914 48.38556180910925 38.130128812241914 48.38556180910925 L 41.04867082740797 51.28415716666472 C 41.04867082740797 51.28415716666472 27.18276703455875 66.59571268225054 31.037582574268544 70.34568188028494 C 34.8694821122692 74.07268517554566 49.63237815577878 59.81591260862414 49.63237815577878 59.81591260862414 L 52.55092017094483 62.71614997456855 C 52.55092017094483 62.71614997456855 43.153630467235416 75.81479537696438 46.31932624394114 78.70519164346953 C 49.383536290407484 81.50372492464531 61.13790442511863 71.24626340813903 61.13790442511863 71.24626340813903 C 64.16774046902125 74.25804971288369 65.97973653010835 78.27868653497985 66.23999797534702 82.54538369574055 C 66.32675178392226 83.95121195578892 66.43478803881064 85.39805694711222 66.5706477813702 86.85801860681987 C 67.8670443995304 100.70140836552457 70.98038273205869 108.15541605113545 76.08739978837636 109.63998390115088 L 78.44606704134945 110.3289566040039 C 78.44606704134945 110.3289566040039 80.76552951118055 89.7238053977489 85.34711293239714 85.05028751755593 C 89.90741725377055 80.3980947832785 110.3289566040039 77.7225897941388 110.3289566040039 77.7225897941388 L 109.61530610412939 75.37844760462197 C 107.908056483828 69.76661735937401 98.73994990053595 66.5333763587279 82.3320214935724 65.73613881207318 C 78.20221268452451 65.53600922297694 74.28522172371974 63.83654567612796 71.35032380259268 60.919902931780896 C 71.35032380259268 60.919902931780896 81.13223174517871 48.46922163591325 78.14986491876742 45.49352447286324 C 75.16422428862421 42.51454642186232 62.76493804881058 52.386510487555675 62.76493804881058 52.386510487555675 L 59.84479753325283 49.48627312161127 C 59.84479753325283 49.48627312161127 73.98400336953743 34.63731623656752 70.25031575804425 30.818449955977428 C 66.48552763551217 26.96841617850175 51.25781327907903 40.954520182713416 51.25781327907903 40.954520182713416 L 48.34086976430468 38.054282816769 C 48.34086976430468 38.054282816769 66.49209428760955 20.700421171261805 61.96289047727505 16.09908126157542 C 57.40913376336546 11.473135005139888 39.75556393554216 29.522527374809588 39.75556393554216 29.522527374809588 L 34.964458636519026 24.762069718509775 L 47.51756213755954 11.927527661212316 L 47.098515259875356 10.551226766956772 C 45.718638519794155 6.01550305187516 39.93719479137752 3.020121499767764 29.42197822837725 1.3928383091559335 C 21.70907334522575 0.1969820282841872 13.105716950321336 -0.022832371069437106 7.245742519262928 0.0017737263513130925 C 4.304297302879155 0.014896977494247845 2.4514050522526385 0.0887152665482286 2.3744724255960254 0.09035567294109545 L 0.13361468076064892 0.18221844316361904 L 0.055048391386824796 2.4279348350253143 L 0.06320074338449534 2.4361368984612475 Z M 21.979200554582384 17.344150392386812 C 19.702322197627588 15.083670376294211 19.687596793286826 11.40259873013953 21.944832796160835 9.120793411690043 C 24.202068799034844 6.8389880932405545 27.876771902177843 6.824223941020099 30.152013357266686 9.086344401088155 C 32.42889171422148 11.348464861156211 32.443697043581835 15.031177420610394 30.186461040707822 17.309702007550317 C 27.930861939699767 19.591507325999807 24.25607891153718 19.60627085245487 21.979200554582384 17.344150392386812 Z"]
 };
 
+// Character / Boat / Fishing Tools path data, traced the same way as the
+// corals above. These are fixed, non-generative set-dressing per spec.
+const CHARACTER_PATHS = {
+  body: "M25.0036 14.6164C37.5036 4.61635 53.5029 -0.883689 73.0029 0.116311C92.5029 1.11631 109.003 7.61634 122.503 18.6163C136.003 29.6163 147.504 53.1164 139.004 58.6164C130.504 64.1164 81.0035 65.1163 71.5035 65.1163C62.0035 65.1163 -0.497017 65.1164 0.00298346 56.1163C0.502983 47.1163 12.5036 24.6164 25.0036 14.6164Z",
+  head: "M49.1481 4C52.2273 -1.33333 59.9253 -1.33334 63.0045 4L111.069 87.25C114.148 92.5833 110.299 99.25 104.141 99.25H8.01194C1.85354 99.25 -1.99547 92.5833 1.08373 87.25L49.1481 4Z"
+};
+const MOUTH_PATH = "M1.00005 1.00006C1.00005 1.00006 10.5589 8.35443 27.3824 7.98671C44.2059 7.619 53.0001 1.00006 53.0001 1.00006";
+
+const BOAT_PATHS = {
+  hull: "M0.0131107 5.69586C-0.206861 2.50531 2.37008 0 5.56821 0H342.144C345.717 0 348.449 3.09624 347.827 6.61475C346.58 13.6763 343.974 26.0101 338.924 41.7534C331.78 64.0247 306.292 79.0791 300.346 82.3369C299.524 82.7874 298.612 83 297.674 83H38.1109C36.9547 83 35.8316 82.6724 34.9153 81.9672C30.6679 78.6981 17.8559 67.4474 9.32313 45.0977C2.42892 27.0398 0.519368 13.0388 0.0131107 5.69586Z",
+  stripe: "M0 0H345L343 13.5L0 6.5V0Z",
+  bow: "M70.2393 9.77345C70.9785 7.74826 83.2393 0.27345 83.2393 0.27345C83.2393 0.27345 90.5 -6.70122 79 49.7988C67.5 106.299 31.5 117.799 31.5 117.799H0C0 117.799 55 94.2988 63 49.7988C71 5.29878 69.5 11.7986 70.2393 9.77345Z"
+};
+
+const HOOK_PATH = "M25.7853 30.3108C26.6603 26.8378 26.1554 24.6644 26.3519 21.9708C26.5119 19.7808 27.5363 18.3604 26.6304 17.791C25.5637 17.1314 23.5602 18.1837 22.159 20.6888C20.8571 23.0163 20.9689 25.4792 19.5995 27.2785C17.9882 29.394 15.1377 30.3619 11.9749 28.9827C9.26792 27.8999 7.82434 24.4514 9.23034 21.4525C11.4873 16.6396 18.4691 11.2593 19.0743 6.55133C19.6852 0.304214 11.7012 -2.49933 8.35243 2.76419C5.82472 7.0932 9.23805 9.89674 8.35243 11.5694C7.51307 13.1293 1.98544 15.8121 0.543782 20.4356C-1.19661 26.0201 1.18463 33.4324 8.49698 37.0016C15.6764 39.7895 24.3041 36.4774 25.7853 30.3118V30.3108ZM13.1698 3.02236C14.7435 3.02236 16.0194 4.32204 16.0194 5.92505C16.0194 7.52806 14.7435 8.82774 13.1698 8.82774C11.5962 8.82774 10.3212 7.52806 10.3212 5.92505C10.3212 4.32204 11.5971 3.02236 13.1698 3.02236Z";
+
+// Character: Head's declared box (143x143) is larger than its rendered path
+// (rounded-corner polygon shrinks the visible silhouette) — centered inside.
+const CHARACTER_DEFS = [
+  { name: 'body', paths: [CHARACTER_PATHS.body], x: 893, y: 351, w: 141.917, h: 65.116, sway: false, top: PALETTE.springGreen[1], bottom: PALETTE.fineTurquoise[1] },
+  { name: 'head', paths: [CHARACTER_PATHS.head], x: 910.42, y: 255.87, w: 112.153, h: 99.25, sway: false, top: PALETTE.springGreen[0], bottom: PALETTE.springGreen[1] }
+];
+const HAND_DEFS = [
+  { x: 1045, y: 365, d: 29 },
+  { x: 1035, y: 351, d: 29 }
+];
+// Pupil is concentric with the sclera (both centered at x+r, y+r).
+const EYE_DEFS = [
+  { x: 948, y: 282, r: 16.1043, pupilR: 9.2025 },
+  { x: 973.307, y: 282, r: 16.1043, pupilR: 9.2025 }
+];
+const MOUTH_DEF = { paths: [MOUTH_PATH], x: 951.221, y: 323.141, w: 52, h: 7 };
+
+const BOAT_DEFS = [
+  { name: 'hull', paths: [BOAT_PATHS.hull], x: 732, y: 398.025, w: 349, h: 83, sway: false, top: PALETTE.pastelBerry[2], bottom: PALETTE.pastelBerry[0] },
+  { name: 'stripe', paths: [BOAT_PATHS.stripe], x: 731.761, y: 398.025, w: 345, h: 13.5, sway: false, top: PALETTE.pastelBerry[1], bottom: PALETTE.pastelBerry[0] },
+  { name: 'bow', paths: [BOAT_PATHS.bow], x: 1002.261, y: 363.227, w: 85.5, h: 117.799, sway: false, top: PALETTE.pastelBerry[2], bottom: PALETTE.pastelBerry[0] }
+];
+const BOAT_DECK_DEF = { x: 724, y: 382.025, w: 357, h: 20, r: 10, top: PALETTE.pastelBerry[3], bottom: PALETTE.pastelBerry[1] };
+
+const ROD_DEF = { x: 1115.690, y: 283.670, w: 6, h: 109.373, rot: -34.37148261044659 * Math.PI / 180, top: PALETTE.fineTurquoise[0], bottom: PALETTE.fineTurquoise[3] };
+const HOOK_DEF = { name: 'hook', paths: [HOOK_PATH], x: 1130, y: 402, w: 27, h: 38, rot: 0, sway: false, fillRule: 'evenodd', top: PALETTE.oceanBlue[1], bottom: PALETTE.fineTurquoise[3] };
+const LINE_ANCHOR = { x: 1117, y: 290 };
+
 // Instance data: real x/y/size/gradient pulled from the Figma nodes, in the
 // same back-to-front order the Scene frame renders them.
 const CORAL_DEFS = [
@@ -58,6 +102,9 @@ const FISH_BONE_DEF = { paths: RAW_PATHS.fishBone, x: 501, y: 921, w: 110, h: 11
 let ridge3rd, ridge2nd, ridge1st;
 let corals = [];
 let fishBone;
+let characterParts = [], boatParts = [], hookInst, mouthInst;
+let blinkTimer = 90, blinking = false, blinkT = 0;
+let hookSwayPhase;
 
 function setup() {
   pixelDensity(1);
@@ -72,6 +119,11 @@ function setup() {
   ridge1st = makeRidge(CANVAS_H * 0.55, CANVAS_H * 0.90, 0.13, CANVAS_H, PALETTE.blackPearl[0], PALETTE.blackPearl[1]);
   corals = CORAL_DEFS.map(makeCoralInstance);
   fishBone = makeCoralInstance(FISH_BONE_DEF);
+  characterParts = CHARACTER_DEFS.map(makeCoralInstance);
+  boatParts = BOAT_DEFS.map(makeCoralInstance);
+  hookInst = makeCoralInstance(HOOK_DEF);
+  mouthInst = makeCoralInstance(MOUTH_DEF);
+  hookSwayPhase = random(TWO_PI);
 }
 
 // All 3 rock layers draw first (back to front among themselves), then every
@@ -85,6 +137,17 @@ function draw() {
   drawRidge(ridge1st);
   corals.forEach(drawTracedShape);
   drawTracedShape(fishBone);
+  boatParts.forEach(drawTracedShape);
+  drawRoundedRectGradient(BOAT_DECK_DEF);
+  characterParts.forEach(drawTracedShape);
+  HAND_DEFS.forEach(drawHand);
+  updateBlink();
+  const openness = eyeOpenness();
+  EYE_DEFS.forEach(e => drawEye(e, openness));
+  drawMouth(mouthInst);
+  drawFishingLine();
+  drawRotatedRectGradient(ROD_DEF);
+  drawTracedShape(hookInst);
 }
 
 function fillGradientRect(x, y, w, h, hexTop, hexBottom) {
@@ -175,10 +238,15 @@ function splitSubpaths(d) {
 }
 
 function parseSubpath(d) {
-  const cmds = d.match(/[MLC][^MLCZ]*/g) || [];
+  const cmds = d.match(/[MLHVC][^MLHVCZ]*/g) || [];
+  let cx = 0, cy = 0;
   return cmds.map(c => {
+    const cmd = c[0];
     const nums = c.slice(1).trim().split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
-    return { x: nums[nums.length - 2], y: nums[nums.length - 1] };
+    if (cmd === 'H') cx = nums[0];
+    else if (cmd === 'V') cy = nums[0];
+    else { cx = nums[nums.length - 2]; cy = nums[nums.length - 1]; }
+    return { x: cx, y: cy };
   });
 }
 
@@ -189,11 +257,12 @@ function parseShape(rawPaths) {
 }
 
 function makeCoralInstance(def) {
+  const sway = def.sway !== false;
   return {
     subpaths: parseShape(def.paths),
     x: def.x, y: def.y, w: def.w, h: def.h, rot: def.rot,
-    topHex: def.top, bottomHex: def.bottom,
-    speed: random(0.02, 0.035), amp: constrain(def.h * 0.03, 1.5, 6), phase: random(TWO_PI)
+    topHex: def.top, bottomHex: def.bottom, fillRule: def.fillRule || 'nonzero',
+    speed: random(0.02, 0.035), amp: sway ? constrain(def.h * 0.03, 1.5, 6) : 0, phase: random(TWO_PI)
   };
 }
 
@@ -220,5 +289,100 @@ function drawSwayLoop(points, inst) {
     else drawingContext.lineTo(p.x + sway, p.y);
   });
   drawingContext.closePath();
+  drawingContext.fill(inst.fillRule);
+}
+
+// Character/Boat/Fishing Tools — exported and traced like the corals above,
+// but held rigid (sway: false) since these are fixed set-dressing, not
+// generative background. Only the eyes and the fishing line move.
+function drawHand(h) {
+  drawGradientEllipse(h.x + h.d / 2, h.y + h.d / 2, h.d, h.d, PALETTE.springGreen[0], PALETTE.springGreen[3]);
+}
+
+function drawGradientEllipse(cx, cy, w, h, topHex, bottomHex) {
+  const g = drawingContext.createLinearGradient(0, cy - h / 2, 0, cy + h / 2);
+  g.addColorStop(0, topHex);
+  g.addColorStop(1, bottomHex);
+  drawingContext.fillStyle = g;
+  drawingContext.beginPath();
+  drawingContext.ellipse(cx, cy, w / 2, h / 2, 0, 0, TWO_PI);
   drawingContext.fill();
+}
+
+function drawRoundedRectGradient(def) {
+  const g = drawingContext.createLinearGradient(0, def.y, 0, def.y + def.h);
+  g.addColorStop(0, def.top);
+  g.addColorStop(1, def.bottom);
+  drawingContext.fillStyle = g;
+  drawingContext.beginPath();
+  drawingContext.roundRect(def.x, def.y, def.w, def.h, def.r);
+  drawingContext.fill();
+}
+
+function drawRotatedRectGradient(def) {
+  drawingContext.save();
+  drawingContext.translate(def.x, def.y);
+  drawingContext.rotate(def.rot);
+  const g = drawingContext.createLinearGradient(0, 0, 0, def.h);
+  g.addColorStop(0, def.top);
+  g.addColorStop(1, def.bottom);
+  drawingContext.fillStyle = g;
+  drawingContext.fillRect(0, 0, def.w, def.h);
+  drawingContext.restore();
+}
+
+// Idle blink: closed eyelids read as height 0, so scaling the eye's vertical
+// radius down to (almost) nothing and back is enough to sell a real blink —
+// no separate eyelid asset needed.
+function updateBlink() {
+  if (blinking) {
+    blinkT += 1 / 8;
+    if (blinkT >= 1) { blinking = false; blinkT = 0; blinkTimer = Math.floor(random(90, 260)); }
+  } else if (--blinkTimer <= 0) {
+    blinking = true;
+    blinkT = 0;
+  }
+}
+
+function eyeOpenness() {
+  if (!blinking) return 1;
+  return blinkT < 0.5 ? 1 - 2 * blinkT : 2 * (blinkT - 0.5);
+}
+
+function drawEye(e, openness) {
+  const h = Math.max(e.r * 2 * openness, 1.5);
+  drawGradientEllipse(e.x + e.r, e.y + e.r, e.r * 2, h, PALETTE.springGreen[3], PALETTE.pastelBerry[3]);
+  if (openness > 0.15) {
+    const ph = Math.max(e.pupilR * 2 * openness, 1);
+    drawGradientEllipse(e.x + e.r, e.y + e.r, e.pupilR * 2, ph, PALETTE.blackPearl[0], PALETTE.blackPearl[1]);
+  }
+}
+
+function drawMouth(inst) {
+  drawingContext.save();
+  drawingContext.translate(inst.x, inst.y);
+  drawingContext.strokeStyle = '#031B36';
+  drawingContext.lineWidth = 2;
+  drawingContext.lineCap = 'round';
+  drawingContext.beginPath();
+  inst.subpaths[0].forEach((p, i) => i === 0 ? drawingContext.moveTo(p.x, p.y) : drawingContext.lineTo(p.x, p.y));
+  drawingContext.stroke();
+  drawingContext.restore();
+}
+
+// The line is real geometry (not a traced shape) so a future fishing-game
+// mechanic can move the hook end and the line follows automatically.
+function drawFishingLine() {
+  const sway = sin(frameCount * 0.02 + hookSwayPhase) * 4;
+  hookInst.x = HOOK_DEF.x + sway;
+  const endX = hookInst.x - 13;
+  const endY = HOOK_DEF.y + 3;
+  drawingContext.save();
+  drawingContext.strokeStyle = PALETTE.blackPearl[2];
+  drawingContext.lineWidth = 1.5;
+  drawingContext.beginPath();
+  drawingContext.moveTo(LINE_ANCHOR.x, LINE_ANCHOR.y);
+  drawingContext.lineTo(endX, endY);
+  drawingContext.stroke();
+  drawingContext.restore();
 }
