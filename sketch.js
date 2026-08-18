@@ -109,6 +109,11 @@ function setup() {
   canvas.parent('sketch-holder');
   frameRate(30);
   noStroke();
+  // Chrome/Edge default to imageSmoothingQuality 'low', which uses a cheap
+  // filter for big downscales — the PNG assets here are exported much larger
+  // than their on-canvas size, so 'low' visibly degraded them. 'high' uses a
+  // proper Lanczos-class resampler.
+  drawingContext.imageSmoothingQuality = 'high';
   // Valley depth steps evenly between adjacent layers (0.09 * CANVAS_H each)
   // so 3rd->2nd and 2nd->1st read as the same "step down" in the scene.
   ridge3rd = makeRidge(HORIZON_Y + 6, CANVAS_H * 0.72, 0.15, CANVAS_H * 0.90, 'rgba(6,62,121,0.59)', 'rgba(56,148,245,0)');
