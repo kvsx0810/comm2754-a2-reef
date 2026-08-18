@@ -181,7 +181,7 @@ const FISH_ASSET_FILES = {
 const FISH_LAYER_DEFS = {
   back:  { count: 7, size: 28, speed: 0.55, opacity: 0.34, top: PALETTE.blackPearl[2], bottom: PALETTE.blackPearl[3] },
   mid:   { count: 7, size: 38, speed: 0.90, opacity: 0.44, top: PALETTE.blackPearl[1], bottom: PALETTE.blackPearl[2] },
-  front: { count: 6, size: 48, speed: 1.30, opacity: 0.54, top: PALETTE.blackPearl[0], bottom: PALETTE.blackPearl[1] }
+  front: { count: 6, size: 48, speed: 1.30, opacity: 1.00, top: PALETTE.blackPearl[0], bottom: PALETTE.blackPearl[1] }
 };
 
 let stoneImgs = {};
