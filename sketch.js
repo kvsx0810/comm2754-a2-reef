@@ -130,8 +130,15 @@ const REEF_PRESETS = {
   ]
 };
 
-const REEF_STRIPS = 30;
-const REEF_SWAY_AMP = 16;
+// STRIPS raised and AMP cut way down from the first pass: these coral PNGs
+// have fine multi-pronged branch tips only a few px thick, and a 16px sway
+// swing sheared adjacent strips far enough apart to tear those thin tips
+// into disconnected floating fragments — reading as "pixelated" even though
+// the source resolution itself was fine. More/thinner strips plus a much
+// smaller swing keeps neighboring strips close enough to still read as one
+// continuous shape while swaying.
+const REEF_STRIPS = 50;
+const REEF_SWAY_AMP = 5;
 const REEF_SWAY_SPEED = 0.024;
 
 let ridge3rd, ridge2nd, ridge1st;
@@ -207,14 +214,17 @@ function buildReefLayer(presets) {
     const h = def.h;
     const w = h * (img.width / img.height);
     const centerX = def.x + def.w / 2;
+    // Fish Bone is a rigid skeleton, not a living organism — it shouldn't
+    // sway like the corals around it.
+    const noSway = def.name === 'Fish Bone';
     return {
       buf: scaleToDisplaySize(img, w, h),
       baseX: centerX - w / 2, baseY: def.y + h, w, h,
       speedMul: random(0.7, 1.3),
-      ampMul: random(0.75, 1.3),
+      ampMul: noSway ? 0 : random(0.75, 1.3),
       stiffExp: random(1.2, 2.2),
       phase: random(TWO_PI),
-      flutter: random() > 0.3
+      flutter: !noSway && random() > 0.3
     };
   });
 }
@@ -333,35 +343,46 @@ function ridgeEnvelope(x, edgeY, plateauY, edgeZonePx) {
 // silhouette (narrow tall edges, long low plateau) stays recognizable:
 // noise() gives correlated jaggedness (a bump leans on its neighbors instead
 // of flipping direction every single point, matching the hand-drawn original)
-// and irregular step spacing avoids the evenly-spaced-comb look.
+// and irregular step spacing avoids the evenly-spaced-comb look. Two noise
+// octaves — a broad one for the overall bumpiness plus a finer, smaller one
+// layered on top for small jagged detail — read as a rock cliff face; a
+// single low-frequency octave alone just produced 1-2 smooth rolling humps,
+// which combined with the rounded corners looked like eroded mountains
+// instead of jagged underwater rock.
 function makeRidge(edgeY, plateauY, edgeZoneFrac, floorY, topCss, bottomCss) {
   const edgeZonePx = CANVAS_W * edgeZoneFrac;
   const amp = (plateauY - edgeY) * 0.28;
   const noiseOffset = random(1000);
-  const noiseScale = 0.006;
+  const noiseOffset2 = random(1000);
+  const noiseScale = 0.012;
+  const noiseScale2 = 0.05;
   const points = [];
   let x = -300;
   while (x < CANVAS_W + 300) {
     const base = ridgeEnvelope(x, edgeY, plateauY, edgeZonePx);
     const jag = (noise(x * noiseScale + noiseOffset) - 0.5) * 2 * amp;
+    const fineJag = (noise(x * noiseScale2 + noiseOffset2) - 0.5) * 2 * amp * 0.25;
     // Rock is underwater — never let a peak, including jag noise, break the
     // surface and poke up into the sky.
-    const y = Math.max(base + jag, HORIZON_Y);
+    const y = Math.max(base + jag + fineJag, HORIZON_Y);
     points.push({ x, y });
-    x += random(25, 65);
+    // Denser vertices than before — sharper, more frequent corners need the
+    // room to actually read as jagged instead of getting smoothed away.
+    x += random(12, 28);
   }
   return { points, floorY, topCss, bottomCss, topY: Math.min(...points.map(p => p.y)) };
 }
 
-// Rounds each interior peak/valley by a small fixed radius so the silhouette
-// stays jagged and rocky instead of turning into smooth round hills.
+// Rounds each interior peak/valley by a small fixed radius — small enough to
+// keep corners looking sharp/angular (rock), not the smooth round-hill look
+// a larger radius produced.
 function drawRidge(r) {
   const g = drawingContext.createLinearGradient(0, r.topY, 0, r.floorY);
   g.addColorStop(0, r.topCss);
   g.addColorStop(1, r.bottomCss);
   drawingContext.fillStyle = g;
   const pts = r.points;
-  const radius = 12;
+  const radius = 4;
   drawingContext.beginPath();
   drawingContext.moveTo(pts[0].x, r.floorY);
   drawingContext.lineTo(pts[0].x, pts[0].y);
