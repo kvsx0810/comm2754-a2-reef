@@ -65,15 +65,23 @@ const KELP_DEFS = [
 // covers its root and only the upper body reads in front — the same "grows
 // out of the rock" depth cue real reef photos show, and it also means a
 // back-layer coral gets naturally re-occluded by every nearer layer drawn
-// after it. Colors match each layer's own real gradient (validated against
-// the Figma file) instead of being guessed.
+// after it. Each layer's coral color is one PALETTE shade LIGHTER than that
+// layer's own rock gradient (not an exact match) — matching exactly made
+// corals camouflage into invisibility against their own background, which
+// reads as "reef disappeared" instead of "reef scattered across depth".
+// The lighter-with-distance ladder across layers is kept so front still
+// reads nearer/more saturated than the hazy back layer.
 const CORAL_FILES = ['Coral.png', 'Coral2.png', 'Coral3.png', 'Coral4.png', 'Coral7.png'];
 const FISH_BONE_FILE = 'Fish Bone.png';
 const REEF_STRIPS = 30;
 const REEF_SWAY_AMP = 16;
 const REEF_SWAY_SPEED = 0.024;
-const REEF_BACK_TOP = PALETTE.blackPearl[2];
-const REEF_BACK_BOTTOM = PALETTE.oceanBlue[1];
+const REEF_BACK_TOP = PALETTE.oceanBlue[1];
+const REEF_BACK_BOTTOM = PALETTE.oceanBlue[2];
+const REEF_MID_TOP = PALETTE.blackPearl[2];
+const REEF_MID_BOTTOM = PALETTE.oceanBlue[1];
+const REEF_FRONT_TOP = PALETTE.blackPearl[1];
+const REEF_FRONT_BOTTOM = PALETTE.blackPearl[2];
 
 let ridge3rd, ridge2nd, ridge1st;
 let kelps = [];
@@ -129,22 +137,24 @@ function generateReef() {
 
   const backN = Math.floor(random(2, 4));
   for (let i = 0; i < backN; i++) {
-    reefBack.push(spawnReefInstance(coralImgs, ridge3rd, [40, 70], [-15, 35], REEF_BACK_TOP, REEF_BACK_BOTTOM));
+    // Min size raised from 40 to 50 — thin branch silhouettes lost too much
+    // detail (read as scribbles) below that at this layer's small scale.
+    reefBack.push(spawnReefInstance(coralImgs, ridge3rd, [50, 80], [-15, 35], REEF_BACK_TOP, REEF_BACK_BOTTOM));
   }
   const midN = Math.floor(random(2, 4));
   for (let i = 0; i < midN; i++) {
-    reefMid.push(spawnReefInstance(coralImgs, ridge2nd, [60, 105], [-20, 38], PALETTE.blackPearl[1], PALETTE.blackPearl[2]));
+    reefMid.push(spawnReefInstance(coralImgs, ridge2nd, [65, 110], [-20, 38], REEF_MID_TOP, REEF_MID_BOTTOM));
   }
   const frontN = Math.floor(random(3, 5));
   for (let i = 0; i < frontN; i++) {
-    reefFront.push(spawnReefInstance(coralImgs, ridge1st, [90, 155], [-25, 42], PALETTE.blackPearl[0], PALETTE.blackPearl[1]));
+    reefFront.push(spawnReefInstance(coralImgs, ridge1st, [90, 155], [-25, 42], REEF_FRONT_TOP, REEF_FRONT_BOTTOM));
   }
 
   // Single Fish Bone prop, randomly assigned to one of the 3 layers like a coral.
   const fbTargets = [
-    { arr: reefBack, ridge: ridge3rd, size: [35, 55], top: REEF_BACK_TOP, bottom: REEF_BACK_BOTTOM },
-    { arr: reefMid, ridge: ridge2nd, size: [50, 80], top: PALETTE.blackPearl[1], bottom: PALETTE.blackPearl[2] },
-    { arr: reefFront, ridge: ridge1st, size: [65, 100], top: PALETTE.blackPearl[0], bottom: PALETTE.blackPearl[1] }
+    { arr: reefBack, ridge: ridge3rd, size: [40, 60], top: REEF_BACK_TOP, bottom: REEF_BACK_BOTTOM },
+    { arr: reefMid, ridge: ridge2nd, size: [55, 85], top: REEF_MID_TOP, bottom: REEF_MID_BOTTOM },
+    { arr: reefFront, ridge: ridge1st, size: [65, 100], top: REEF_FRONT_TOP, bottom: REEF_FRONT_BOTTOM }
   ];
   const fb = random(fbTargets);
   fb.arr.push(spawnReefInstance([fishBoneImg], fb.ridge, fb.size, [-12, 18], fb.top, fb.bottom, { noSway: true }));
