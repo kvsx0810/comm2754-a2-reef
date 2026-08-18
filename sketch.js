@@ -132,7 +132,11 @@ function setup() {
   ridge3rd = makeRidge(HORIZON_Y + 6, CANVAS_H * 0.72, 0.15, CANVAS_H * 0.90, RIDGE3RD_TOP, RIDGE3RD_BOTTOM);
   ridge2nd = makeRidge(CANVAS_H * 0.47, CANVAS_H * 0.81, 0.14, CANVAS_H * 0.97, PALETTE.blackPearl[1], PALETTE.blackPearl[2]);
   ridge1st = makeRidge(CANVAS_H * 0.55, CANVAS_H * 0.90, 0.13, CANVAS_H, PALETTE.blackPearl[0], PALETTE.blackPearl[1]);
-  kelps = KELP_DEFS.map(makeTracedInstance);
+  // Kelp temporarily off — no PNG export exists yet for it, and leaving it
+  // as the lone vector-drawn shape reads as an unfinished leftover next to
+  // the PNG-based reef. Re-enable via `kelps = KELP_DEFS.map(makeTracedInstance);`
+  // once a Kelp PNG is exported.
+  kelps = [];
   generateReef();
   hookSwayPhase = random(TWO_PI);
 }
