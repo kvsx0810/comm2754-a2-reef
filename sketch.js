@@ -147,15 +147,15 @@ function generateReef() {
   for (let i = 0; i < backN; i++) {
     // Min size raised from 40 to 50 — thin branch silhouettes lost too much
     // detail (read as scribbles) below that at this layer's small scale.
-    reefBack.push(spawnReefInstance(coralImgs, ridge3rd, [50, 80], [-15, 35], REEF_BACK_TOP, REEF_BACK_BOTTOM));
+    reefBack.push(spawnReefInstance(coralImgs, ridge3rd, [50, 80], REEF_BACK_TOP, REEF_BACK_BOTTOM));
   }
   const midN = Math.floor(random(2, 4));
   for (let i = 0; i < midN; i++) {
-    reefMid.push(spawnReefInstance(coralImgs, ridge2nd, [65, 110], [-20, 38], REEF_MID_TOP, REEF_MID_BOTTOM));
+    reefMid.push(spawnReefInstance(coralImgs, ridge2nd, [65, 110], REEF_MID_TOP, REEF_MID_BOTTOM));
   }
   const frontN = Math.floor(random(3, 5));
   for (let i = 0; i < frontN; i++) {
-    reefFront.push(spawnReefInstance(coralImgs, ridge1st, [90, 155], [-25, 42], REEF_FRONT_TOP, REEF_FRONT_BOTTOM));
+    reefFront.push(spawnReefInstance(coralImgs, ridge1st, [90, 155], REEF_FRONT_TOP, REEF_FRONT_BOTTOM));
   }
 
   // Single Fish Bone prop, randomly assigned to one of the 3 layers like a coral.
@@ -165,18 +165,22 @@ function generateReef() {
     { arr: reefFront, ridge: ridge1st, size: [65, 100], top: REEF_FRONT_TOP, bottom: REEF_FRONT_BOTTOM }
   ];
   const fb = random(fbTargets);
-  fb.arr.push(spawnReefInstance([fishBoneImg], fb.ridge, fb.size, [-12, 18], fb.top, fb.bottom, { noSway: true }));
+  fb.arr.push(spawnReefInstance([fishBoneImg], fb.ridge, fb.size, fb.top, fb.bottom, { noSway: true }));
 }
 
-function spawnReefInstance(pool, ridge, sizeRange, jitterRange, topHex, bottomHex, opts = {}) {
+function spawnReefInstance(pool, ridge, sizeRange, topHex, bottomHex, opts = {}) {
   const img = random(pool);
   const h = random(sizeRange[0], sizeRange[1]);
   const w = h * (img.width / img.height);
-  const x = random(60, CANVAS_W - 60);
-  // Root the base at this layer's own contour, mostly at-or-below the line
-  // (nestled into the rock) with only a small allowance to float above it —
-  // matches how real reef corals grow out from the rock rather than floating.
-  const y = constrain(ridgeYAt(ridge, x) + random(jitterRange[0], jitterRange[1]), CANVAS_H * 0.5, CANVAS_H * 0.99);
+  // Corals only sit over the ridge's flat "valley" plateau, never the tall
+  // edge columns — a wide safety margin past the ridge's own edgeZonePx
+  // keeps x solidly in the flat area, not partway up the smoothstep climb.
+  const margin = ridge.edgeZonePx * 1.8;
+  const x = random(margin, CANVAS_W - margin);
+  // Exactly half the coral's own height sits above the rock's contour line
+  // (visible) and half below it (hidden by the rock drawn after) — a small
+  // jitter keeps instances from looking mechanically identical.
+  const y = ridgeYAt(ridge, x) + h * 0.5 + random(-6, 6);
   return {
     buf: recolorToDisplaySize(img, topHex, bottomHex, w, h),
     baseX: x - w / 2, baseY: y, w, h,
@@ -323,7 +327,7 @@ function makeRidge(edgeY, plateauY, edgeZoneFrac, floorY, topCss, bottomCss) {
     points.push({ x, y });
     x += random(25, 65);
   }
-  return { points, floorY, topCss, bottomCss, topY: Math.min(...points.map(p => p.y)) };
+  return { points, floorY, topCss, bottomCss, edgeZonePx, topY: Math.min(...points.map(p => p.y)) };
 }
 
 // Interpolates a ridge's contour height at an arbitrary x — used to root
