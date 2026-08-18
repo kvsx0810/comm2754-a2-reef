@@ -148,9 +148,31 @@ const REEF_SWAY_SPEED = 0.034;
 // too prominent/bulky — scale every coral/Fish Bone down uniformly.
 const REEF_SCALE = 0.65;
 
+// Background fish school: purely ambient, not a design focal point — a
+// procedurally-drawn vector fish never looked right (tried rounded-corner
+// polygons, tuned proportions, still read as off), so same as the reef, it's
+// 3 hand-drawn PNG silhouettes exported straight from Figma instead. Each
+// instance is one of the 3 shapes, tinted down to a low, near-black alpha so
+// it blends into the water as a shadow rather than reading as a subject, and
+// travels in a dead-straight line — the whole school shares one heading
+// (left-to-right or right-to-left, picked once per load) rather than
+// flocking or wandering, which read as fish "loitering" in one spot.
+const FISH_ASSET_FILES = {
+  BackFish1: 'BackFish1.png',
+  BackFish2: 'BackFish2.png',
+  BackFish3: 'BackFish3.png'
+};
+const FISH_COUNT = 14;
+const FISH_SIZE = 42;   // px, displayed body height at depth z = 1
+const FISH_SPEED = 1.0; // px/frame multiplier
+const FISH_OPACITY = 0.38;
+
 let stoneImgs = {};
 let kelps = [];
 let coralImgs = {};
+let fishImgs = {};
+let fishSchool = [];
+let fishSwimDirection = 1; // 1 = left-to-right, -1 = right-to-left; fixed for the whole school
 let reefBack = [], reefMid = [], reefFront = [];
 let bodyImg, headImg, hand1Img, hand2Img, mouthImg, boatImg, rodImg, hookImg;
 let blinkTimer = 90, blinking = false, blinkT = 0;
@@ -170,6 +192,9 @@ function preload() {
   });
   Object.entries(STONE_DEFS).forEach(([layer, def]) => {
     stoneImgs[layer] = loadImage('assets/' + def.file);
+  });
+  Object.entries(FISH_ASSET_FILES).forEach(([name, file]) => {
+    fishImgs[name] = loadImage('assets/' + file);
   });
 }
 
@@ -193,7 +218,58 @@ function setup() {
   // once a Kelp PNG is exported.
   kelps = [];
   buildReef();
+  buildFishSchool();
   hookSwayPhase = random(TWO_PI);
+}
+
+// Kept well below the horizon/sea-surface line — mid-to-lower water column,
+// never near the top where a silhouette would read as breaking the surface.
+function fishSwimBand() {
+  const waterH = CANVAS_H - HORIZON_Y;
+  return { top: HORIZON_Y + waterH * 0.22, bottom: HORIZON_Y + waterH * 0.85 };
+}
+
+function buildFishSchool() {
+  const band = fishSwimBand();
+  const names = Object.keys(FISH_ASSET_FILES);
+  fishSwimDirection = random() < 0.5 ? 1 : -1;
+  fishSchool = [];
+  for (let i = 0; i < FISH_COUNT; i++) {
+    const z = random(0.55, 1.35); // depth: smaller/dimmer/slower = farther away
+    fishSchool.push({
+      x: random(CANVAS_W),
+      y: random(band.top, band.bottom),
+      z,
+      name: random(names),
+      speedMul: map(z, 0.55, 1.35, 0.6, 1.3),
+      opacityMul: map(z, 0.55, 1.35, 0.55, 1.05)
+    });
+  }
+}
+
+function updateFishSchool() {
+  const baseSpeed = 1.3 * FISH_SPEED;
+  const margin = 140;
+  fishSchool.forEach(f => {
+    f.x += fishSwimDirection * baseSpeed * f.speedMul;
+    if (fishSwimDirection === 1 && f.x > CANVAS_W + margin) f.x = -margin;
+    if (fishSwimDirection === -1 && f.x < -margin) f.x = CANVAS_W + margin;
+  });
+}
+
+function drawFishInstance(f) {
+  const img = fishImgs[f.name];
+  const dispH = FISH_SIZE * f.z;
+  const dispW = dispH * (img.width / img.height);
+  push();
+  translate(f.x, f.y);
+  // mirror horizontally only when swimming right-to-left — the art has an
+  // asymmetric dorsal fin, so rotate(PI) would flip it upside-down too
+  if (fishSwimDirection === -1) scale(-1, 1);
+  imageMode(CENTER);
+  tint(255, 255, 255, 255 * FISH_OPACITY * f.opacityMul);
+  image(img, 0, 0, dispW, dispH);
+  pop();
 }
 
 // Picks one hand-built preset per rock layer into reefBack/reefMid/reefFront
@@ -297,6 +373,8 @@ function drawReefInstance(inst) {
 function draw() {
   fillGradientRect(0, 0, CANVAS_W, HORIZON_Y, PALETTE.blackPearl[0], PALETTE.blackPearl[2]);
   fillGradientRect(0, HORIZON_Y, CANVAS_W, CANVAS_H - HORIZON_Y, PALETTE.oceanBlue[2], PALETTE.oceanBlue[3]);
+  updateFishSchool();
+  fishSchool.forEach(drawFishInstance);
   reefBack.forEach(drawReefInstance);
   drawStone('3rd');
   reefMid.forEach(drawReefInstance);
