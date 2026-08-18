@@ -141,8 +141,8 @@ const REEF_PRESETS = {
 // smaller swing keeps neighboring strips close enough to still read as one
 // continuous shape while swaying.
 const REEF_STRIPS = 50;
-const REEF_SWAY_AMP = 5;
-const REEF_SWAY_SPEED = 0.024;
+const REEF_SWAY_AMP = 8;
+const REEF_SWAY_SPEED = 0.034;
 // Preset sizes come straight from each placement's real Figma renderBounds
 // (verified accurate), but rendered at that literal size the reef reads as
 // too prominent/bulky — scale every coral/Fish Bone down uniformly.
