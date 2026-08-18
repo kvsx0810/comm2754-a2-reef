@@ -58,21 +58,17 @@ const KELP_DEFS = [
   { name: 'kelpR', paths: RAW_PATHS.kelp, x: 1426, y: 798, w: 149, h: 231, rot: 0.657, top: PALETTE.blackPearl[3], bottom: PALETTE.oceanBlue[3] }
 ];
 
-// The 3rd/back rock layer's own gradient — used only for the rock shape
-// itself now (coral color is baked directly into each PNG, not matched to
-// this in code).
-const RIDGE3RD_TOP = 'rgba(6,62,121,0.59)';
-const RIDGE3RD_BOTTOM = 'rgba(56,148,245,0)';
-
-// In the real Figma file the 1st layer's 2nd gradient stop is dragged far
-// below the canvas, so within the visible shape the color barely drifts off
-// the dark stop — measured directly off a real Figma render, it only
-// reaches ~24% of the way from blackPearl[0] to blackPearl[1] even at the
-// very floor. This is that pre-blended color, used as the "bottom" of the
-// gradient in place of the full blackPearl[1] — the on-canvas gradient
-// geometry itself is unchanged, only how far along the dark->light range it
-// actually ends up.
-const RIDGE1ST_BOTTOM = '#02182F';
+// The 3 rock layers used to be procedurally generated (noise-based jagged
+// silhouette, different every reload) — after many rounds of tuning it
+// still never looked right, so they're real static art exported straight
+// out of Figma instead, same as the character/boat/coral PNGs. x/y below
+// are each layer's real absoluteRenderBounds (Scene-relative); all 3 are
+// exactly CANVAS_W wide so only the y offset differs per layer.
+const STONE_DEFS = {
+  '1st': { file: 'First Layer Of Stone.png', y: 554 },
+  '2nd': { file: '2nd Layer Of Stone.png', y: 554 },
+  '3rd': { file: '3rd Layer Of Stone.png', y: 452 }
+};
 
 // Coral reef: generative, differs every reload. Each rock layer has a few
 // hand-built presets — fixed compositions the artist laid out and colored
@@ -155,7 +151,7 @@ const REEF_SWAY_SPEED = 0.024;
 // too prominent/bulky — scale every coral/Fish Bone down uniformly.
 const REEF_SCALE = 0.65;
 
-let ridge3rd, ridge2nd, ridge1st;
+let stoneImgs = {};
 let kelps = [];
 let coralImgs = {};
 let reefBack = [], reefMid = [], reefFront = [];
@@ -175,6 +171,9 @@ function preload() {
   Object.entries(CORAL_ASSET_FILES).forEach(([name, file]) => {
     coralImgs[name] = loadImage('assets/' + file);
   });
+  Object.entries(STONE_DEFS).forEach(([layer, def]) => {
+    stoneImgs[layer] = loadImage('assets/' + def.file);
+  });
 }
 
 function setup() {
@@ -191,11 +190,6 @@ function setup() {
   // than their on-canvas size, so 'low' visibly degraded them. 'high' uses a
   // proper Lanczos-class resampler.
   drawingContext.imageSmoothingQuality = 'high';
-  // Valley depth steps evenly between adjacent layers (0.09 * CANVAS_H each)
-  // so 3rd->2nd and 2nd->1st read as the same "step down" in the scene.
-  ridge3rd = makeRidge(HORIZON_Y + 6, CANVAS_H * 0.72, 0.15, CANVAS_H * 0.90, RIDGE3RD_TOP, RIDGE3RD_BOTTOM);
-  ridge2nd = makeRidge(CANVAS_H * 0.47, CANVAS_H * 0.81, 0.14, CANVAS_H * 0.97, PALETTE.blackPearl[1], PALETTE.blackPearl[2]);
-  ridge1st = makeRidge(CANVAS_H * 0.55, CANVAS_H * 0.90, 0.13, CANVAS_H, PALETTE.blackPearl[0], RIDGE1ST_BOTTOM);
   // Kelp temporarily off — no PNG export exists yet for it, and leaving it
   // as the lone vector-drawn shape reads as an unfinished leftover next to
   // the PNG-based reef. Re-enable via `kelps = KELP_DEFS.map(makeTracedInstance);`
@@ -302,11 +296,11 @@ function draw() {
   fillGradientRect(0, 0, CANVAS_W, HORIZON_Y, PALETTE.blackPearl[0], PALETTE.blackPearl[2]);
   fillGradientRect(0, HORIZON_Y, CANVAS_W, CANVAS_H - HORIZON_Y, PALETTE.oceanBlue[2], PALETTE.oceanBlue[3]);
   reefBack.forEach(drawReefInstance);
-  drawRidge(ridge3rd);
+  drawStone('3rd');
   reefMid.forEach(drawReefInstance);
-  drawRidge(ridge2nd);
+  drawStone('2nd');
   reefFront.forEach(drawReefInstance);
-  drawRidge(ridge1st);
+  drawStone('1st');
   kelps.forEach(drawTracedShape);
   // Figma's own back-to-front order: fishing tools, then character, then
   // boat — the boat's near rim sits in front of the character's lower
@@ -337,84 +331,12 @@ function fillGradientRect(x, y, w, h, hexTop, hexBottom) {
   drawingContext.fillRect(x, y, w, h);
 }
 
-// Traced from the real Figma rock layers: height only rises near the two
-// frame edges — measured on the real path, the climb from the flat middle to
-// full edge height completes within roughly the outer 5-15% of the width, and
-// the remaining ~80-90% across the middle sits at a fairly steady low plateau
-// rather than curving gradually. A transition spread across half the canvas
-// (an earlier version of this function) reads as a mountain slope; a narrow
-// edge climb plus a long flat plateau reads as a rock shelf, which is what
-// the source data actually shows.
-function edgeFactor(x, edgeZonePx) {
-  const cx = constrain(x, 0, CANVAS_W);
-  const d = Math.min(cx, CANVAS_W - cx);
-  const t = constrain(1 - d / edgeZonePx, 0, 1);
-  return t * t * (3 - 2 * t); // smoothstep
-}
-
-function ridgeEnvelope(x, edgeY, plateauY, edgeZonePx) {
-  return lerp(plateauY, edgeY, edgeFactor(x, edgeZonePx));
-}
-
-// Loop + randomization = generative (differs every load) while the overall
-// silhouette (narrow tall edges, long low plateau) stays recognizable:
-// noise() gives correlated jaggedness (a bump leans on its neighbors instead
-// of flipping direction every single point, matching the hand-drawn original)
-// and irregular step spacing avoids the evenly-spaced-comb look. Two noise
-// octaves — a broad one for the overall bumpiness plus a finer, smaller one
-// layered on top for small jagged detail — read as a rock cliff face; a
-// single low-frequency octave alone just produced 1-2 smooth rolling humps,
-// which combined with the rounded corners looked like eroded mountains
-// instead of jagged underwater rock.
-function makeRidge(edgeY, plateauY, edgeZoneFrac, floorY, topCss, bottomCss) {
-  const edgeZonePx = CANVAS_W * edgeZoneFrac;
-  const amp = (plateauY - edgeY) * 0.28;
-  const noiseOffset = random(1000);
-  const noiseOffset2 = random(1000);
-  const noiseScale = 0.01;
-  const noiseScale2 = 0.035;
-  const points = [];
-  let x = -300;
-  while (x < CANVAS_W + 300) {
-    const base = ridgeEnvelope(x, edgeY, plateauY, edgeZonePx);
-    const jag = (noise(x * noiseScale + noiseOffset) - 0.5) * 2 * amp;
-    const fineJag = (noise(x * noiseScale2 + noiseOffset2) - 0.5) * 2 * amp * 0.12;
-    // Rock is underwater — never let a peak, including jag noise, break the
-    // surface and poke up into the sky.
-    const y = Math.max(base + jag + fineJag, HORIZON_Y);
-    points.push({ x, y });
-    x += random(18, 40);
-  }
-  return { points, floorY, topCss, bottomCss, topY: Math.min(...points.map(p => p.y)) };
-}
-
-// Rounds each interior peak/valley by a small fixed radius so the silhouette
-// stays jagged and rocky instead of turning into smooth round hills.
-function drawRidge(r) {
-  const g = drawingContext.createLinearGradient(0, r.topY, 0, r.floorY);
-  g.addColorStop(0, r.topCss);
-  g.addColorStop(1, r.bottomCss);
-  drawingContext.fillStyle = g;
-  const pts = r.points;
-  const radius = 7;
-  drawingContext.beginPath();
-  drawingContext.moveTo(pts[0].x, r.floorY);
-  drawingContext.lineTo(pts[0].x, pts[0].y);
-  for (let i = 1; i < pts.length - 1; i++) roundedCorner(pts[i - 1], pts[i], pts[i + 1], radius);
-  drawingContext.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-  drawingContext.lineTo(pts[pts.length - 1].x, r.floorY);
-  drawingContext.closePath();
-  drawingContext.fill();
-}
-
-function roundedCorner(prev, curr, next, radius) {
-  const inLen = Math.hypot(curr.x - prev.x, curr.y - prev.y) || 1;
-  const outLen = Math.hypot(next.x - curr.x, next.y - curr.y) || 1;
-  const r = Math.min(radius, inLen / 2, outLen / 2);
-  const inPt = { x: curr.x - (curr.x - prev.x) / inLen * r, y: curr.y - (curr.y - prev.y) / inLen * r };
-  const outPt = { x: curr.x + (next.x - curr.x) / outLen * r, y: curr.y + (next.y - curr.y) / outLen * r };
-  drawingContext.lineTo(inPt.x, inPt.y);
-  drawingContext.quadraticCurveTo(curr.x, curr.y, outPt.x, outPt.y);
+// Real static art (see STONE_DEFS) — width always matches CANVAS_W exactly,
+// only the height/y-offset differs per layer.
+function drawStone(layer) {
+  const def = STONE_DEFS[layer];
+  const img = stoneImgs[layer];
+  image(img, 0, def.y, CANVAS_W, img.height);
 }
 
 // Splits raw SVG path data into closed loops and keeps only each command's
