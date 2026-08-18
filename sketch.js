@@ -101,7 +101,10 @@ function preload() {
 }
 
 function setup() {
-  pixelDensity(1);
+  // Canvas is drawn at 1920x1080 logical units either way, but rendering at
+  // the screen's real device pixel ratio keeps that crisp instead of the
+  // browser stretching a 1x bitmap to fill a bigger/HiDPI display.
+  pixelDensity(displayDensity());
   const canvas = createCanvas(CANVAS_W, CANVAS_H);
   canvas.parent('sketch-holder');
   frameRate(30);
