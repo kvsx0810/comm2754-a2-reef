@@ -65,7 +65,7 @@ function setup() {
   canvas.parent('sketch-holder');
   frameRate(30);
   noStroke();
-  ridge3rd = makeRidge(CANVAS_H * 0.40, CANVAS_H * 0.72, 0.15, CANVAS_H * 0.90, 'rgba(6,62,121,0.59)', 'rgba(56,148,245,0)');
+  ridge3rd = makeRidge(HORIZON_Y + 6, CANVAS_H * 0.72, 0.15, CANVAS_H * 0.90, 'rgba(6,62,121,0.59)', 'rgba(56,148,245,0)');
   ridge2nd = makeRidge(CANVAS_H * 0.47, CANVAS_H * 0.78, 0.14, CANVAS_H * 0.97, PALETTE.blackPearl[1], PALETTE.blackPearl[2]);
   ridge1st = makeRidge(CANVAS_H * 0.55, CANVAS_H * 0.85, 0.13, CANVAS_H, PALETTE.blackPearl[0], PALETTE.blackPearl[1]);
   corals = CORAL_DEFS.map(makeCoralInstance);
@@ -127,7 +127,10 @@ function makeRidge(edgeY, plateauY, edgeZoneFrac, floorY, topCss, bottomCss) {
   while (x < CANVAS_W + 300) {
     const base = ridgeEnvelope(x, edgeY, plateauY, edgeZonePx);
     const jag = (noise(x * noiseScale + noiseOffset) - 0.5) * 2 * amp;
-    points.push({ x, y: base + jag });
+    // Rock is underwater — never let a peak, including jag noise, break the
+    // surface and poke up into the sky.
+    const y = Math.max(base + jag, HORIZON_Y);
+    points.push({ x, y });
     x += random(25, 65);
   }
   return { points, floorY, topCss, bottomCss, topY: Math.min(...points.map(p => p.y)) };
