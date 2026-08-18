@@ -12,9 +12,9 @@ const PALETTE = {
 
 // Raw vector path data traced from the Figma "Scene" frame's Kelp layers,
 // read directly via the Plugin API. Corals/Fish Bone used to be traced the
-// same way but were replaced with recolored PNGs (see CORAL_FILES /
-// FISH_BONE_FILE below) — bezier-endpoint tracing loses too much curve
-// smoothness on shapes this detailed.
+// same way but were replaced with colored PNGs (see CORAL_ASSET_FILES
+// below) — bezier-endpoint tracing loses too much curve smoothness on
+// shapes this detailed.
 const RAW_PATHS = {
   kelp: [
     "M 26.139664074428065 215.3665919952659 C 25.33008914104649 201.4276588451629 24.354187339727453 184.42389798516717 34.35164254552559 163.32556293889476 C 43.371962231654756 144.30309603701127 46.58937622321034 151.93002999581557 51.15964677815079 147.68077546230705 C 59.863757084315964 139.5866833719882 75.35152863090244 138.63639277149898 82.1150699112948 129.3163779732801 C 90.03750223903918 118.39344834668961 87.06739441097768 93.47896299129563 92.97148701761823 82.48939061257933 C 95.02666223024484 78.66509757938165 96.28064377463393 75.14728447529674 116.7385713872582 59.4694011031117 C 127.07075275195538 51.55329947820324 142.38709246633007 40.814080715301806 145.20365523346769 44.16921957266465 C 147.8285897420723 47.30231270877983 135.8656736808274 52.153136597692225 127.78090677161552 66.95032692522662 C 121.54431671874136 78.34328946578471 119.09496093993141 89.6719515587547 117.51832763720162 96.92524980282337 C 114.51770994502097 110.7585204883951 116.62380294266225 110.73171187065482 113.97297732049574 118.18970748860944 C 109.55886100557453 130.60373681638657 108.30998591748497 151.59471698587714 98.90722883613302 159.84202062198725 C 84.11633526884052 172.81842664961962 85.06030679803537 171.77300049349844 76.57454766802266 180.98164514256547 C 69.0965463831987 189.09646348702148 65.39210962391913 202.2081342363253 49.54144099034265 205.5297984058659 C 23.017926572812872 211.09183311576476 30.140867073580992 225.39238724651776 29.049653357481308 225.08667121194242 C 26.999091300317396 224.5187236862566 26.42470003537126 220.32029013131088 26.127471244368255 215.36372020426182 L 26.139664074428065 215.3665919952659 Z",
@@ -58,43 +58,85 @@ const KELP_DEFS = [
   { name: 'kelpR', paths: RAW_PATHS.kelp, x: 1426, y: 798, w: 149, h: 231, rot: 0.657, top: PALETTE.blackPearl[3], bottom: PALETTE.oceanBlue[3] }
 ];
 
-// The 3rd/back rock layer's own gradient — pulled out as constants (instead
-// of inline strings only in setup()) so the reef's back-layer coral color
-// below can reuse the exact same values, never an approximation of them.
+// The 3rd/back rock layer's own gradient — used only for the rock shape
+// itself now (coral color is baked directly into each PNG, not matched to
+// this in code).
 const RIDGE3RD_TOP = 'rgba(6,62,121,0.59)';
 const RIDGE3RD_BOTTOM = 'rgba(56,148,245,0)';
 
-// Coral reef: generative, differs every reload. Corals are recolored PNG
-// silhouettes (source-in mask + vertical gradient — tint()/multiply doesn't
-// work on pure-black source pixels) scattered across all 3 rock layers, each
-// one anchored to and drawn BEHIND its own layer's contour so the rock
-// covers its root and only the upper body reads in front — the same "grows
-// out of the rock" depth cue real reef photos show, and it also means a
-// back-layer coral gets naturally re-occluded by every nearer layer drawn
-// after it. Each layer's coral color matches that same layer's own rock
-// gradient EXACTLY — not an approximation, the literal same values the rock
-// itself uses — which is the real rule validated against the Figma file:
-// the two coral colors that exist there are pixel-identical to ridge1st's
-// and ridge2nd's own top/bottom. The back layer had no coral in the original
-// (fixed-position) design to validate against, so it follows the same rule
-// by construction: matches ridge3rd's own gradient exactly, translucency
-// included, rather than inventing an unvalidated color for it.
-const CORAL_FILES = ['Coral.png', 'Coral2.png', 'Coral3.png', 'Coral4.png', 'Coral7.png'];
-const FISH_BONE_FILE = 'Fish Bone.png';
+// Coral reef: generative, differs every reload. Each rock layer has a few
+// hand-built presets — fixed compositions the artist laid out and colored
+// directly in Figma, one exported PNG per coral (already colored, no
+// code-side recoloring). On every load, one preset is picked per layer, so
+// the reef is a permutation of hand-designed arrangements rather than an
+// algorithmically scattered one. x/y/w/h below are each coral's
+// absoluteRenderBounds read from its own preset frame via the Plugin API —
+// every preset frame is exactly CANVAS_W x CANVAS_H, so these coordinates
+// map directly onto the scene with no conversion.
+const CORAL_ASSET_FILES = {
+  Coral: 'Coral.png',
+  Coral2: 'Coral2.png',
+  Coral3: 'Coral3.png',
+  Coral5: 'Coral5.png',
+  Coral7: 'Coral7.png',
+  Coral8: 'Coral8.png',
+  Coral9: 'Coral8.png', // same shape as Coral8, only ever placed at a different scale
+  'Fish Bone': 'Fish Bone.png'
+};
+
+const REEF_PRESETS = {
+  '1st': [
+    [
+      { name: 'Fish Bone', x: 1326.83, y: 912.31, w: 120.67, h: 100.25 },
+      { name: 'Coral3', x: 1625.73, y: 799.17, w: 160.68, h: 161.98 },
+      { name: 'Coral2', x: 18, y: 664, w: 166, h: 367 },
+      { name: 'Coral', x: 702.1, y: 912.19, w: 106.31, h: 142.53 }
+    ],
+    [
+      { name: 'Fish Bone', x: 1309.42, y: 909.37, w: 118.3, h: 102.76 },
+      { name: 'Coral2', x: 0, y: 617.63, w: 159.21, h: 364.35 },
+      { name: 'Coral2', x: 1755, y: 604, w: 130, h: 289 },
+      { name: 'Coral', x: 682.1, y: 881.19, w: 106.31, h: 142.53 }
+    ]
+  ],
+  '2nd': [
+    [
+      { name: 'Coral7', x: 1646.26, y: 662.24, w: 168.36, h: 154.48 },
+      { name: 'Coral5', x: 208.08, y: 817.33, w: 106.32, h: 142.42 }
+    ],
+    [
+      { name: 'Coral7', x: 1346.86, y: 755.12, w: 165.01, h: 154.42 },
+      { name: 'Coral5', x: 538.08, y: 817.33, w: 106.32, h: 142.42 }
+    ],
+    [
+      { name: 'Coral7', x: 582.26, y: 838.24, w: 168.36, h: 154.48 },
+      { name: 'Coral5', x: 1613.78, y: 685.63, w: 121.82, h: 127.65 }
+    ]
+  ],
+  '3rd': [
+    [
+      { name: 'Coral9', x: 65, y: 689, w: 149, h: 231 },
+      { name: 'Coral8', x: 1469.7, y: 744.22, w: 160.65, h: 217.03 }
+    ],
+    [
+      { name: 'Coral9', x: 776.04, y: 675.22, w: 141.83, h: 230.7 },
+      { name: 'Coral8', x: 1523.7, y: 558.22, w: 160.65, h: 217.03 },
+      { name: 'Coral8', x: 53.02, y: 572.45, w: 189.2, h: 287.89 }
+    ],
+    [
+      { name: 'Coral9', x: 589.15, y: 699.59, w: 141.87, h: 226.65 },
+      { name: 'Coral8', x: 1648.31, y: 607.89, w: 144.25, h: 221.27 }
+    ]
+  ]
+};
+
 const REEF_STRIPS = 30;
 const REEF_SWAY_AMP = 16;
 const REEF_SWAY_SPEED = 0.024;
-const REEF_BACK_TOP = RIDGE3RD_TOP;
-const REEF_BACK_BOTTOM = RIDGE3RD_BOTTOM;
-const REEF_MID_TOP = PALETTE.blackPearl[1];
-const REEF_MID_BOTTOM = PALETTE.blackPearl[2];
-const REEF_FRONT_TOP = PALETTE.blackPearl[0];
-const REEF_FRONT_BOTTOM = PALETTE.blackPearl[1];
 
 let ridge3rd, ridge2nd, ridge1st;
 let kelps = [];
-let coralImgs = [];
-let fishBoneImg;
+let coralImgs = {};
 let reefBack = [], reefMid = [], reefFront = [];
 let bodyImg, headImg, hand1Img, hand2Img, mouthImg, boatImg, rodImg, hookImg;
 let blinkTimer = 90, blinking = false, blinkT = 0;
@@ -109,8 +151,9 @@ function preload() {
   boatImg = loadImage('assets/boat.png');
   rodImg = loadImage('assets/rod.png');
   hookImg = loadImage('assets/hook.png');
-  coralImgs = CORAL_FILES.map(f => loadImage('assets/' + f));
-  fishBoneImg = loadImage('assets/' + FISH_BONE_FILE);
+  Object.entries(CORAL_ASSET_FILES).forEach(([name, file]) => {
+    coralImgs[name] = loadImage('assets/' + file);
+  });
 }
 
 function setup() {
@@ -137,86 +180,39 @@ function setup() {
   // the PNG-based reef. Re-enable via `kelps = KELP_DEFS.map(makeTracedInstance);`
   // once a Kelp PNG is exported.
   kelps = [];
-  generateReef();
+  buildReef();
   hookSwayPhase = random(TWO_PI);
 }
 
-// Reef corals are scattered across all 3 rock layers and spawned into
-// reefBack/reefMid/reefFront so draw() can slot each one in right before its
-// own layer is painted on top of it (see draw() below for why).
-function generateReef() {
-  reefBack = []; reefMid = []; reefFront = [];
-
-  const backN = Math.floor(random(2, 4));
-  for (let i = 0; i < backN; i++) {
-    // Min size raised from 40 to 50 — thin branch silhouettes lost too much
-    // detail (read as scribbles) below that at this layer's small scale.
-    reefBack.push(spawnReefInstance(coralImgs, ridge3rd, [50, 80], REEF_BACK_TOP, REEF_BACK_BOTTOM));
-  }
-  const midN = Math.floor(random(2, 4));
-  for (let i = 0; i < midN; i++) {
-    reefMid.push(spawnReefInstance(coralImgs, ridge2nd, [65, 110], REEF_MID_TOP, REEF_MID_BOTTOM));
-  }
-  const frontN = Math.floor(random(3, 5));
-  for (let i = 0; i < frontN; i++) {
-    reefFront.push(spawnReefInstance(coralImgs, ridge1st, [90, 155], REEF_FRONT_TOP, REEF_FRONT_BOTTOM));
-  }
-
-  // Single Fish Bone prop, randomly assigned to one of the 3 layers like a coral.
-  const fbTargets = [
-    { arr: reefBack, ridge: ridge3rd, size: [40, 60], top: REEF_BACK_TOP, bottom: REEF_BACK_BOTTOM },
-    { arr: reefMid, ridge: ridge2nd, size: [55, 85], top: REEF_MID_TOP, bottom: REEF_MID_BOTTOM },
-    { arr: reefFront, ridge: ridge1st, size: [65, 100], top: REEF_FRONT_TOP, bottom: REEF_FRONT_BOTTOM }
-  ];
-  const fb = random(fbTargets);
-  fb.arr.push(spawnReefInstance([fishBoneImg], fb.ridge, fb.size, fb.top, fb.bottom, { noSway: true }));
+// Picks one hand-built preset per rock layer into reefBack/reefMid/reefFront
+// so draw() can slot each one in right before its own layer is painted on
+// top of it (see draw() below for why).
+function buildReef() {
+  reefBack = buildReefLayer(REEF_PRESETS['3rd']);
+  reefMid = buildReefLayer(REEF_PRESETS['2nd']);
+  reefFront = buildReefLayer(REEF_PRESETS['1st']);
 }
 
-function spawnReefInstance(pool, ridge, sizeRange, topHex, bottomHex, opts = {}) {
-  const img = random(pool);
-  const h = random(sizeRange[0], sizeRange[1]);
-  const w = h * (img.width / img.height);
-  // Corals only sit over the ridge's flat "valley" plateau, never the tall
-  // edge columns — a wide safety margin past the ridge's own edgeZonePx
-  // keeps x solidly in the flat area, not partway up the smoothstep climb.
-  const margin = ridge.edgeZonePx * 1.8;
-  const x = random(margin, CANVAS_W - margin);
-  // Exactly half the coral's own height sits above the rock's contour line
-  // (visible) and half below it (hidden by the rock drawn after) — a small
-  // jitter keeps instances from looking mechanically identical.
-  const y = ridgeYAt(ridge, x) + h * 0.5 + random(-6, 6);
-  return {
-    buf: recolorToDisplaySize(img, topHex, bottomHex, w, h),
-    baseX: x - w / 2, baseY: y, w, h,
+function buildReefLayer(presets) {
+  const preset = random(presets);
+  return preset.map(def => ({
+    buf: scaleToDisplaySize(coralImgs[def.name], def.w, def.h),
+    baseX: def.x, baseY: def.y + def.h, w: def.w, h: def.h,
     speedMul: random(0.7, 1.3),
-    ampMul: opts.noSway ? 0 : random(0.75, 1.3),
+    ampMul: random(0.75, 1.3),
     stiffExp: random(1.2, 2.2),
     phase: random(TWO_PI),
-    flutter: !opts.noSway && random() > 0.3
-  };
+    flutter: random() > 0.3
+  }));
 }
 
-// Recolors a black-silhouette PNG by using its alpha channel as a mask
-// ('source-in') and filling a vertical gradient behind it — tint()/multiply
-// doesn't work here since multiplying by pure black (0,0,0) always stays
-// black regardless of the tint color. Also downscales to the actual
-// on-canvas display size right here, once, with high-quality resampling —
-// re-resampling a full-res source on every strip, every frame, is what made
-// an earlier version of this laggy.
-function recolorToDisplaySize(img, topHex, bottomHex, dispW, dispH) {
-  const full = createGraphics(img.width, img.height);
-  full.image(img, 0, 0);
-  full.drawingContext.globalCompositeOperation = 'source-in';
-  const g = full.drawingContext.createLinearGradient(0, 0, 0, img.height);
-  g.addColorStop(0, topHex);
-  g.addColorStop(1, bottomHex);
-  full.drawingContext.fillStyle = g;
-  full.drawingContext.fillRect(0, 0, img.width, img.height);
-
+// Downscales to the actual on-canvas display size once, with high-quality
+// resampling — re-resampling a full-res source on every strip, every frame,
+// is what made an earlier version of the reef sway laggy.
+function scaleToDisplaySize(img, dispW, dispH) {
   const small = createGraphics(Math.ceil(dispW), Math.ceil(dispH));
   small.drawingContext.imageSmoothingQuality = 'high';
-  small.image(full, 0, 0, small.width, small.height);
-  full.remove();
+  small.image(img, 0, 0, small.width, small.height);
   return small;
 }
 
@@ -331,22 +327,7 @@ function makeRidge(edgeY, plateauY, edgeZoneFrac, floorY, topCss, bottomCss) {
     points.push({ x, y });
     x += random(25, 65);
   }
-  return { points, floorY, topCss, bottomCss, edgeZonePx, topY: Math.min(...points.map(p => p.y)) };
-}
-
-// Interpolates a ridge's contour height at an arbitrary x — used to root
-// reef corals to a specific layer's silhouette instead of a flat y-band.
-function ridgeYAt(ridge, x) {
-  const pts = ridge.points;
-  if (x <= pts[0].x) return pts[0].y;
-  if (x >= pts[pts.length - 1].x) return pts[pts.length - 1].y;
-  for (let i = 0; i < pts.length - 1; i++) {
-    if (x >= pts[i].x && x <= pts[i + 1].x) {
-      const t = (x - pts[i].x) / (pts[i + 1].x - pts[i].x);
-      return lerp(pts[i].y, pts[i + 1].y, t);
-    }
-  }
-  return pts[pts.length - 1].y;
+  return { points, floorY, topCss, bottomCss, topY: Math.min(...points.map(p => p.y)) };
 }
 
 // Rounds each interior peak/valley by a small fixed radius so the silhouette
