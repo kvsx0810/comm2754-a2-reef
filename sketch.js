@@ -127,7 +127,12 @@ function draw() {
   drawRidge(ridge1st);
   corals.forEach(drawTracedShape);
   drawTracedShape(fishBone);
-  drawImgDef(boatImg, BOAT_IMG_DEF);
+  // Figma's own back-to-front order: fishing tools, then character, then
+  // boat — the boat's near rim sits in front of the character's lower
+  // body/legs so they read as sitting inside it, not floating on top.
+  const hookX = drawFishingLine();
+  drawImgDef(rodImg, ROD_IMG_DEF);
+  drawImgDef(hookImg, { x: hookX, y: HOOK_IMG_DEF.y, w: HOOK_IMG_DEF.w, h: HOOK_IMG_DEF.h });
   drawImgDef(bodyImg, BODY_IMG_DEF);
   drawImgDef(headImg, HEAD_IMG_DEF);
   drawImgDef(hand1Img, { x: HAND_DEFS[0].x, y: HAND_DEFS[0].y, w: HAND_DEFS[0].d, h: HAND_DEFS[0].d });
@@ -136,9 +141,7 @@ function draw() {
   const openness = eyeOpenness();
   EYE_DEFS.forEach(e => drawEye(e, openness));
   drawImgDef(mouthImg, MOUTH_IMG_DEF);
-  const hookX = drawFishingLine();
-  drawImgDef(rodImg, ROD_IMG_DEF);
-  drawImgDef(hookImg, { x: hookX, y: HOOK_IMG_DEF.y, w: HOOK_IMG_DEF.w, h: HOOK_IMG_DEF.h });
+  drawImgDef(boatImg, BOAT_IMG_DEF);
 }
 
 function drawImgDef(img, def) {
