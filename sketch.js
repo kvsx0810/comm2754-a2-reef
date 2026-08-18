@@ -157,6 +157,16 @@ const REEF_SCALE = 0.65;
 // pass behind it) — each layer gets its own size/opacity/speed tier for a
 // simple parallax read (farther = smaller, dimmer, slower).
 //
+// The source art is a flat black silhouette. Just tinting that down with a
+// low alpha (the first version of this) still reads as "black fish, faded"
+// rather than a fish that belongs in front of its own rock layer — tint()
+// can only scale alpha, it can't inject a hue into pixels that are already
+// (0,0,0) (multiplying black by any tint color is still black). So each
+// layer's fish are recolored once at startup (source-in + a vertical
+// gradient, same trick as the old coral recolor step) to the same
+// blackPearl tones each rock layer's own gradient uses — front matches the
+// 1st layer's darkest tone, back matches the 3rd layer's lighter/hazier one.
+//
 // Each fish's left/right heading is random, but two fish on the exact same
 // horizontal line swimming toward each other reads as a glitch. Instead of
 // checking every pair for collisions, each layer is pre-divided into a fixed
@@ -169,15 +179,16 @@ const FISH_ASSET_FILES = {
   BackFish3: 'BackFish3.png'
 };
 const FISH_LAYER_DEFS = {
-  back:  { count: 4, size: 28, speed: 0.55, opacity: 0.20 },
-  mid:   { count: 4, size: 38, speed: 0.90, opacity: 0.30 },
-  front: { count: 4, size: 48, speed: 1.30, opacity: 0.42 }
+  back:  { count: 7, size: 28, speed: 0.55, opacity: 0.34, top: PALETTE.blackPearl[2], bottom: PALETTE.blackPearl[3] },
+  mid:   { count: 7, size: 38, speed: 0.90, opacity: 0.44, top: PALETTE.blackPearl[1], bottom: PALETTE.blackPearl[2] },
+  front: { count: 6, size: 48, speed: 1.30, opacity: 0.54, top: PALETTE.blackPearl[0], bottom: PALETTE.blackPearl[1] }
 };
 
 let stoneImgs = {};
 let kelps = [];
 let coralImgs = {};
 let fishImgs = {};
+let fishRecolored = { back: {}, mid: {}, front: {} };
 let fishBack = [], fishMid = [], fishFront = [];
 let reefBack = [], reefMid = [], reefFront = [];
 let bodyImg, headImg, hand1Img, hand2Img, mouthImg, boatImg, rodImg, hookImg;
@@ -224,9 +235,10 @@ function setup() {
   // once a Kelp PNG is exported.
   kelps = [];
   buildReef();
-  fishBack = buildFishLayer(FISH_LAYER_DEFS.back);
-  fishMid = buildFishLayer(FISH_LAYER_DEFS.mid);
-  fishFront = buildFishLayer(FISH_LAYER_DEFS.front);
+  buildFishRecolors();
+  fishBack = buildFishLayer('back', FISH_LAYER_DEFS.back);
+  fishMid = buildFishLayer('mid', FISH_LAYER_DEFS.mid);
+  fishFront = buildFishLayer('front', FISH_LAYER_DEFS.front);
   hookSwayPhase = random(TWO_PI);
 }
 
@@ -237,7 +249,34 @@ function fishSwimBand() {
   return { top: HORIZON_Y + waterH * 0.22, bottom: HORIZON_Y + waterH * 0.85 };
 }
 
-function buildFishLayer(def) {
+// Recolors each of the 3 fish shapes into each of the 3 layer tones, once,
+// up front — 9 small buffers total, reused by every fish instance in that
+// layer rather than recoloring per-instance every frame.
+function buildFishRecolors() {
+  Object.keys(FISH_LAYER_DEFS).forEach(layerKey => {
+    const def = FISH_LAYER_DEFS[layerKey];
+    Object.keys(FISH_ASSET_FILES).forEach(name => {
+      fishRecolored[layerKey][name] = recolorSilhouette(fishImgs[name], def.top, def.bottom);
+    });
+  });
+}
+
+// Uses the source PNG's own alpha as a mask ('source-in') and fills a
+// vertical gradient behind it — tint()/multiply can't recolor a black
+// source since multiplying by pure black (0,0,0) always stays black.
+function recolorSilhouette(img, topHex, bottomHex) {
+  const g = createGraphics(img.width, img.height);
+  g.image(img, 0, 0);
+  g.drawingContext.globalCompositeOperation = 'source-in';
+  const grad = g.drawingContext.createLinearGradient(0, 0, 0, img.height);
+  grad.addColorStop(0, topHex);
+  grad.addColorStop(1, bottomHex);
+  g.drawingContext.fillStyle = grad;
+  g.drawingContext.fillRect(0, 0, img.width, img.height);
+  return g;
+}
+
+function buildFishLayer(layerKey, def) {
   const band = fishSwimBand();
   const names = Object.keys(FISH_ASSET_FILES);
   const laneH = (band.bottom - band.top) / def.count;
@@ -247,11 +286,12 @@ function buildFishLayer(def) {
     // stays inside the lane's own slice so it can never drift onto a
     // neighboring lane's line
     const laneTop = band.top + i * laneH;
+    const name = random(names);
     fish.push({
       x: random(CANVAS_W),
       y: laneTop + laneH * random(0.2, 0.8),
       z: random(0.8, 1.2),
-      name: random(names),
+      buf: fishRecolored[layerKey][name],
       dir: random() < 0.5 ? 1 : -1,
       speedMul: random(0.85, 1.2),
       opacityMul: random(0.85, 1.15)
@@ -271,17 +311,19 @@ function updateFishLayer(layer, def) {
 }
 
 function drawFishInstance(f, def) {
-  const img = fishImgs[f.name];
   const dispH = def.size * f.z;
-  const dispW = dispH * (img.width / img.height);
+  const dispW = dispH * (f.buf.width / f.buf.height);
   push();
   translate(f.x, f.y);
   // mirror horizontally only when swimming right-to-left — the art has an
   // asymmetric dorsal fin, so rotate(PI) would flip it upside-down too
   if (f.dir === -1) scale(-1, 1);
   imageMode(CENTER);
+  // f.buf is already the recolored (non-black) buffer — tint() here is only
+  // ever scaling alpha (255,255,255 leaves RGB unchanged), which is the
+  // one thing tint() can safely do to a source that isn't pure black.
   tint(255, 255, 255, 255 * def.opacity * f.opacityMul);
-  image(img, 0, 0, dispW, dispH);
+  image(f.buf, 0, 0, dispW, dispH);
   pop();
 }
 
