@@ -276,6 +276,20 @@ function recolorSilhouette(img, topHex, bottomHex) {
   return g;
 }
 
+// The recolored buffers are still native PNG resolution (up to 1214x512).
+// Drawing straight from that every frame forces the canvas to redo a big
+// high-quality downscale (native -> ~50px) on every one of 20 fish, every
+// frame — the exact same lag cause already solved for the reef corals
+// (see REEF_SLICE_OVERSAMPLE above). Scaling each instance down to its real
+// on-screen size once, here at build time, means draw() just blits an
+// already-small buffer every frame instead of re-resampling a huge one.
+function fishToDisplaySize(img, dispW, dispH) {
+  const g = createGraphics(Math.max(1, Math.ceil(dispW)), Math.max(1, Math.ceil(dispH)));
+  g.drawingContext.imageSmoothingQuality = 'high';
+  g.image(img, 0, 0, g.width, g.height);
+  return g;
+}
+
 function buildFishLayer(layerKey, def) {
   const band = fishSwimBand();
   const names = Object.keys(FISH_ASSET_FILES);
@@ -287,11 +301,15 @@ function buildFishLayer(layerKey, def) {
     // neighboring lane's line
     const laneTop = band.top + i * laneH;
     const name = random(names);
+    const z = random(0.8, 1.2);
+    const nativeBuf = fishRecolored[layerKey][name];
+    const h = def.size * z;
+    const w = h * (nativeBuf.width / nativeBuf.height);
     fish.push({
       x: random(CANVAS_W),
       y: laneTop + laneH * random(0.2, 0.8),
-      z: random(0.8, 1.2),
-      buf: fishRecolored[layerKey][name],
+      w, h,
+      buf: fishToDisplaySize(nativeBuf, w, h),
       dir: random() < 0.5 ? 1 : -1,
       speedMul: random(0.85, 1.2),
       opacityMul: random(0.85, 1.15)
@@ -311,19 +329,18 @@ function updateFishLayer(layer, def) {
 }
 
 function drawFishInstance(f, def) {
-  const dispH = def.size * f.z;
-  const dispW = dispH * (f.buf.width / f.buf.height);
   push();
   translate(f.x, f.y);
   // mirror horizontally only when swimming right-to-left — the art has an
   // asymmetric dorsal fin, so rotate(PI) would flip it upside-down too
   if (f.dir === -1) scale(-1, 1);
   imageMode(CENTER);
-  // f.buf is already the recolored (non-black) buffer — tint() here is only
-  // ever scaling alpha (255,255,255 leaves RGB unchanged), which is the
-  // one thing tint() can safely do to a source that isn't pure black.
+  // f.buf is already the recolored (non-black), pre-scaled buffer — tint()
+  // here is only ever scaling alpha (255,255,255 leaves RGB unchanged),
+  // which is the one thing tint() can safely do to a source that isn't
+  // pure black.
   tint(255, 255, 255, 255 * def.opacity * f.opacityMul);
-  image(f.buf, 0, 0, dispW, dispH);
+  image(f.buf, 0, 0, f.w, f.h);
   pop();
 }
 
