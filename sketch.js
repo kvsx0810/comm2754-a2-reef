@@ -46,8 +46,13 @@ const RAW_PATHS = {
 // used for the corals loses too much of the original curve smoothness on
 // these larger, more detailed shapes. Only pieces that actually animate
 // (eyes, fishing line) stay as code-drawn geometry.
+// x/y/w/h below are each node's absoluteRenderBounds read via the Plugin API
+// (the real rendered-pixel box, in Scene-relative coordinates) — not the
+// layout bounding box, which can differ once corner-rounding or rotation is
+// involved (Head's layout box is 143x143 but its rendered silhouette is
+// 112x99; Rod/Hook are rotated so their layout x/y isn't their visual x/y).
 const BODY_IMG_DEF = { x: 893, y: 351, w: 141.917, h: 65.116 };
-const HEAD_IMG_DEF = { x: 910.42, y: 255.87, w: 112.153, h: 99.25 };
+const HEAD_IMG_DEF = { x: 910.424, y: 242, w: 112.152, h: 99.25 };
 const HAND_DEFS = [
   { x: 1045, y: 365, d: 29 },
   { x: 1035, y: 351, d: 29 }
@@ -57,10 +62,10 @@ const EYE_DEFS = [
   { x: 948, y: 282, r: 16.1043, pupilR: 9.2025 },
   { x: 973.307, y: 282, r: 16.1043, pupilR: 9.2025 }
 ];
-const MOUTH_IMG_DEF = { x: 951.221, y: 323.141, w: 52, h: 7 };
+const MOUTH_IMG_DEF = { x: 950.221, y: 322.141, w: 54, h: 9 };
 const BOAT_IMG_DEF = { x: 724, y: 363.227, w: 363.761, h: 117.799 };
-const ROD_IMG_DEF = { x: 1115.69, y: 280.28, w: 66.7, h: 93.6 };
-const HOOK_IMG_DEF = { x: 1130, y: 402, w: 27, h: 38 };
+const ROD_IMG_DEF = { x: 1055.113, y: 284.84, w: 64.36, h: 91.324 };
+const HOOK_IMG_DEF = { x: 1103, y: 402, w: 27, h: 38 };
 const LINE_ANCHOR = { x: 1117, y: 290 };
 
 // Instance data: real x/y/size/gradient pulled from the Figma nodes, in the
