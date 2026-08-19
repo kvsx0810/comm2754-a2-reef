@@ -291,6 +291,14 @@ function recolorSilhouette(img, topHex, bottomHex) {
 // already-small buffer every frame instead of re-resampling a huge one.
 function fishToDisplaySize(img, dispW, dispH) {
   const g = createGraphics(Math.max(1, Math.ceil(dispW)), Math.max(1, Math.ceil(dispH)));
+  // createGraphics() defaults to pixel density 1 regardless of the main
+  // canvas's own density (set via pixelDensity(displayDensity()) in setup,
+  // often 1.5-3x on real screens). Without matching it here, this buffer's
+  // actual raw pixels fall short of what the main canvas needs to fill the
+  // same CSS-pixel area, so it gets stretched past its native resolution at
+  // draw time and reads as pixelated — worse the smaller the buffer is,
+  // which is why shrinking the size range surfaced it.
+  g.pixelDensity(pixelDensity());
   g.drawingContext.imageSmoothingQuality = 'high';
   g.image(img, 0, 0, g.width, g.height);
   return g;
