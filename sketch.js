@@ -246,7 +246,8 @@ const CLOUD_ZONE_COUNT = 4;
 // face right — so its mirror condition below is inverted accordingly.
 const HERO_FISH_ASSET_FILES = {
   Fish1: 'Fish1.png',
-  Fish2: 'Fish2.png'
+  Fish2: 'Fish2.png',
+  Fish3: 'Fish3.png'
 };
 const HERO_FISH_COUNT = 15;
 const HERO_FISH_SIZE = 70; // px, reference height
