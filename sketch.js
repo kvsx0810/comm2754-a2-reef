@@ -300,7 +300,7 @@ const RIG_ANCHOR_X0 = BOAT_IMG_DEF.x + BOAT_IMG_DEF.w / 2;
 // both edges, regardless of which way the boat ends up facing.
 const RIG_BACK_EXTENT = RIG_ANCHOR_X0 - BOAT_IMG_DEF.x;
 const RIG_FRONT_EXTENT = (HOOK_IMG_DEF.x + HOOK_IMG_DEF.w + 4) - RIG_ANCHOR_X0;
-const RIG_MOVE_SPEED = 4 * FRAME_TIME_SCALE; // px/frame while sailing between spots
+const RIG_MOVE_SPEED = 8 * FRAME_TIME_SCALE; // px/frame while sailing between spots
 
 // Claw-machine fishing: the hook drops straight down and grabs the very
 // FIRST fish it touches, wherever that happens to be (not a fixed depth +
@@ -310,8 +310,8 @@ const RIG_MOVE_SPEED = 4 * FRAME_TIME_SCALE; // px/frame while sailing between s
 // tryCatchAtHook() below.
 const HOOK_REST_Y = HOOK_IMG_DEF.y; // idle/travelling depth, start and end of every cast
 const HOOK_MAX_DEPTH_Y = CANVAS_H - 30; // how far down the hook can drop if it never touches a fish
-const HOOK_CAST_SPEED = 8 * FRAME_TIME_SCALE; // px/frame descending
-const HOOK_REEL_SPEED = 6 * FRAME_TIME_SCALE; // px/frame ascending — a little slower, reads as pulling something up
+const HOOK_CAST_SPEED = 16 * FRAME_TIME_SCALE; // px/frame descending
+const HOOK_REEL_SPEED = 12 * FRAME_TIME_SCALE; // px/frame ascending — a little slower, reads as pulling something up
 
 let stoneImgs = {};
 let kelps = [];
@@ -779,6 +779,18 @@ function draw() {
   drawHeroFishLayer();
   updateRig();
   drawRig();
+  drawDebugFPS(); // TEMPORARY — diagnosing a reported frame-drop feeling, remove once confirmed
+}
+
+function drawDebugFPS() {
+  push();
+  noStroke();
+  fill(0, 160);
+  rect(6, 6, 90, 26);
+  fill(255);
+  textSize(14);
+  text('FPS: ' + frameRate().toFixed(1), 14, 24);
+  pop();
 }
 
 function drawImgDef(img, def) {
