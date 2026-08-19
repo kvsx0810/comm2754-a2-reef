@@ -2,6 +2,18 @@ const CANVAS_W = 1920;
 const CANVAS_H = 1080;
 const HORIZON_Y = Math.round(CANVAS_H * 0.42);
 
+// p5.js runs at 60fps natively — the whole scene was originally tuned at
+// 30fps though, so every per-frame speed/frequency below was calibrated
+// assuming 30 draw() calls a second. Bumping frameRate() alone would make
+// everything (swimming, sway, blinking, the hook...) visibly run 2x too
+// fast, since all of it just steps a fixed amount every frame regardless of
+// how often a frame happens. FRAME_TIME_SCALE corrects for that: multiply
+// any "px moved per frame" or "sin(frameCount * freq)" frequency by it, and
+// divide any "wait N frames" duration by it, so real-world speed/timing
+// stays the same no matter what FRAME_RATE is set to.
+const FRAME_RATE = 60;
+const FRAME_TIME_SCALE = 30 / FRAME_RATE;
+
 const PALETTE = {
   blackPearl:    ['#021427', '#042549', '#063E79', '#0A69CC'],
   springGreen:   ['#8FEC83', '#BFF4B8', '#E3FAE0', '#EBFBE9'],
@@ -213,17 +225,18 @@ const CLOUD_SKY_TOP = HORIZON_Y * 0.16;
 // bigger clouds need more headroom than smaller ones to keep their bottom
 // edge clear of HEAD_IMG_DEF.y.
 const CLOUD_HEAD_CLEARANCE = 15;
+// Each cloud is assigned one vertical slice of the sky at build time and
+// only ever drifts back and forth within it (bouncing at its own zone's
+// edges), instead of sailing across the entire canvas width — reads as a
+// handful of clouds each loosely parked over their own patch of sky.
+const CLOUD_ZONE_COUNT = 4;
 
 // Hero catchable fish (Fish1/Fish2): the actual gameplay subject, unlike the
 // dim background BackFish silhouettes — full opacity, real color, drawn in
-// front of the reef. A big population (many instances of the same 2
-// species, sizes varied to read as a mix of juveniles and mature fish) so
-// there's something visible to actually deplete. They swim on their own,
+// front of the reef. They swim through nearly the whole water column,
 // independent of whatever the boat is doing; the rod "catching" one happens
-// via real proximity — when the hook is down and waiting, any fish that
-// drifts within CATCH_RADIUS of it is caught and permanently removed from
-// this array (see updateRig()'s 'waiting' branch) — not a scripted/random
-// pick, so as the population thins, catches naturally get rarer too.
+// via real proximity to the hook (see tryCatchAtHook()) — not a scripted/
+// random pick, so as the population thins, catches naturally get rarer too.
 // NOTE: this source art faces LEFT by default (eye/head on the left, tail
 // fin on the right) — the opposite convention from BackFish/Cloud, which
 // face right — so its mirror condition below is inverted accordingly.
@@ -243,8 +256,8 @@ const HERO_FISH_SIZE_MAX = HERO_FISH_SIZE * 0.85;
 // so catching it is more sustainable — see the respawn logic in updateRig()
 // and spawnJuvenileFish() below. Below this size, a catch is permanent.
 const HERO_FISH_MATURE_THRESHOLD = (HERO_FISH_SIZE_MIN + HERO_FISH_SIZE_MAX) / 2;
-const HERO_FISH_RESPAWN_FRAMES_MIN = 150; // ~5s @ 30fps
-const HERO_FISH_RESPAWN_FRAMES_MAX = 300; // ~10s @ 30fps
+const HERO_FISH_RESPAWN_FRAMES_MIN = 150 / FRAME_TIME_SCALE; // ~5s real time
+const HERO_FISH_RESPAWN_FRAMES_MAX = 300 / FRAME_TIME_SCALE; // ~10s real time
 const HERO_FISH_SPEED = 1.3;
 // Spread through nearly the whole water column, not just the upper band —
 // they're free to overlap the rock layers/coral/BackFish, all of which are
@@ -287,17 +300,18 @@ const RIG_ANCHOR_X0 = BOAT_IMG_DEF.x + BOAT_IMG_DEF.w / 2;
 // both edges, regardless of which way the boat ends up facing.
 const RIG_BACK_EXTENT = RIG_ANCHOR_X0 - BOAT_IMG_DEF.x;
 const RIG_FRONT_EXTENT = (HOOK_IMG_DEF.x + HOOK_IMG_DEF.w + 4) - RIG_ANCHOR_X0;
-const RIG_MOVE_SPEED = 4; // px/frame while sailing between spots
+const RIG_MOVE_SPEED = 4 * FRAME_TIME_SCALE; // px/frame while sailing between spots
 
 // Claw-machine fishing: the hook drops straight down and grabs the very
-// FIRST fish it touches (not a fixed depth + wait) — unlike a claw machine
-// though, the trip back up isn't "one grab and done": any fish the hook
-// passes near on the way back up gets caught too, so one cast can bring up
-// several fish. See updateRig()'s 'casting'/'reeling' branches.
+// FIRST fish it touches, wherever that happens to be (not a fixed depth +
+// wait), then heads straight back up — at most one fish per cast, whether
+// the catch happens on the way down or (if nothing bit on the way down) on
+// the way up. See updateRig()'s 'casting'/'reeling' branches and
+// tryCatchAtHook() below.
 const HOOK_REST_Y = HOOK_IMG_DEF.y; // idle/travelling depth, start and end of every cast
 const HOOK_MAX_DEPTH_Y = CANVAS_H - 30; // how far down the hook can drop if it never touches a fish
-const HOOK_CAST_SPEED = 8; // px/frame descending
-const HOOK_REEL_SPEED = 6; // px/frame ascending — a little slower, reads as pulling something up
+const HOOK_CAST_SPEED = 8 * FRAME_TIME_SCALE; // px/frame descending
+const HOOK_REEL_SPEED = 6 * FRAME_TIME_SCALE; // px/frame ascending — a little slower, reads as pulling something up
 
 let stoneImgs = {};
 let kelps = [];
@@ -313,7 +327,7 @@ let heroFish = [];
 let pendingRespawns = []; // [{ framesLeft }] — one entry per mature catch waiting to spawn a new juvenile
 let reefBack = [], reefMid = [], reefFront = [];
 let bodyImg, headImg, hand1Img, hand2Img, mouthImg, boatImg, rodImg, hookImg;
-let blinkTimer = 90, blinking = false, blinkT = 0;
+let blinkTimer = 90 / FRAME_TIME_SCALE, blinking = false, blinkT = 0;
 let hookSwayPhase;
 
 // Rig movement/fishing state — see updateRig() for the state machine.
@@ -322,7 +336,7 @@ let rigDir = 1; // 1 = facing/travelling right, -1 = facing/travelling left
 let rigTargetX = RIG_ANCHOR_X0;
 let rigState = 'moving'; // 'moving' | 'casting' | 'reeling'
 let hookY = HOOK_REST_Y; // stateful — the descent can stop early on a catch, so this isn't a simple lerp between two fixed points
-let caughtFishList = []; // fish caught during the current cast, still dangling on the way up — [{name, h}]
+let caughtFish = null; // {name, h} — at most one fish per cast, still dangling on the way up
 
 function preload() {
   bodyImg = loadImage('assets/body.png');
@@ -357,7 +371,7 @@ function setup() {
   pixelDensity(displayDensity());
   const canvas = createCanvas(CANVAS_W, CANVAS_H);
   canvas.parent('sketch-holder');
-  frameRate(30);
+  frameRate(FRAME_RATE);
   noStroke();
   // Chrome/Edge default to imageSmoothingQuality 'low', which uses a cheap
   // filter for big downscales — the PNG assets here are exported much larger
@@ -465,7 +479,7 @@ function buildFishLayer(layerKey, def) {
 }
 
 function updateFishLayer(layer, def) {
-  const baseSpeed = 1.3 * def.speed;
+  const baseSpeed = 1.3 * def.speed * FRAME_TIME_SCALE;
   const margin = 140;
   layer.forEach(f => {
     f.x += f.dir * baseSpeed * f.speedMul;
@@ -503,6 +517,7 @@ function drawFishLayer(layer, def) {
 
 function buildCloudLayer(def) {
   const names = Object.keys(CLOUD_ASSET_FILES);
+  const zoneW = CANVAS_W / CLOUD_ZONE_COUNT;
   const clouds = [];
   for (let i = 0; i < def.count; i++) {
     const img = cloudImgs[random(names)];
@@ -511,25 +526,28 @@ function buildCloudLayer(def) {
     // bigger clouds need more headroom to keep their own bottom edge above
     // the character's head — bound is per-cloud, not a fixed constant
     const bottomBound = Math.max(CLOUD_SKY_TOP + 10, HEAD_IMG_DEF.y - CLOUD_HEAD_CLEARANCE - h / 2);
+    const zoneIdx = Math.floor(random(CLOUD_ZONE_COUNT));
+    const zoneLeft = zoneIdx * zoneW, zoneRight = zoneLeft + zoneW;
     clouds.push({
-      x: random(CANVAS_W),
+      x: random(zoneLeft + w / 2, zoneRight - w / 2),
       y: random(CLOUD_SKY_TOP, bottomBound),
       w, h,
       buf: preScaleToDisplaySize(img, w, h),
       dir: random() < 0.5 ? 1 : -1,
-      speedMul: random(0.8, 1.2)
+      speedMul: random(0.8, 1.2),
+      zoneLeft, zoneRight
     });
   }
   return clouds;
 }
 
 function updateCloudLayer(layer, def) {
-  const baseSpeed = 1.3 * def.speed;
-  const margin = 200;
+  const baseSpeed = 1.3 * def.speed * FRAME_TIME_SCALE;
   layer.forEach(c => {
     c.x += c.dir * baseSpeed * c.speedMul;
-    if (c.dir === 1 && c.x > CANVAS_W + margin) c.x = -margin;
-    if (c.dir === -1 && c.x < -margin) c.x = CANVAS_W + margin;
+    const halfW = c.w / 2;
+    if (c.x - halfW < c.zoneLeft) { c.x = c.zoneLeft + halfW; c.dir = 1; }
+    else if (c.x + halfW > c.zoneRight) { c.x = c.zoneRight - halfW; c.dir = -1; }
   });
 }
 
@@ -599,7 +617,7 @@ function updateFishSpawns() {
 }
 
 function updateHeroFish() {
-  const baseSpeed = 1.3 * HERO_FISH_SPEED;
+  const baseSpeed = 1.3 * HERO_FISH_SPEED * FRAME_TIME_SCALE;
   const margin = 160;
   heroFish.forEach(f => {
     f.x += f.dir * baseSpeed * f.speedMul;
@@ -717,7 +735,7 @@ function drawReefInstance(inst) {
   const dispStripH = inst.h / REEF_STRIPS + 0.6; // slight overlap avoids seam lines
   // as reefHealth drops the whole reef should read as more sluggish/lifeless
   const vitality = lerp(REEF_HEALTH_VITALITY_FLOOR, 1, reefHealth);
-  const effSpeed = REEF_SWAY_SPEED * inst.speedMul * vitality;
+  const effSpeed = REEF_SWAY_SPEED * inst.speedMul * vitality * FRAME_TIME_SCALE;
 
   for (let i = 0; i < REEF_STRIPS; i++) {
     const t = i / (REEF_STRIPS - 1); // 0 = base, 1 = tip
@@ -837,7 +855,7 @@ function drawSwayLoop(points, inst) {
   drawingContext.beginPath();
   points.forEach((p, i) => {
     const falloff = 1 - constrain(p.y / inst.h, 0, 1);
-    const sway = sin(frameCount * inst.speed + i * 0.35 + inst.phase) * inst.amp * falloff;
+    const sway = sin(frameCount * inst.speed * FRAME_TIME_SCALE + i * 0.35 + inst.phase) * inst.amp * falloff;
     if (i === 0) drawingContext.moveTo(p.x + sway, p.y);
     else drawingContext.lineTo(p.x + sway, p.y);
   });
@@ -860,8 +878,8 @@ function drawGradientEllipse(cx, cy, w, h, topHex, bottomHex) {
 // no separate eyelid asset needed.
 function updateBlink() {
   if (blinking) {
-    blinkT += 1 / 8;
-    if (blinkT >= 1) { blinking = false; blinkT = 0; blinkTimer = Math.floor(random(90, 260)); }
+    blinkT += (1 / 8) * FRAME_TIME_SCALE;
+    if (blinkT >= 1) { blinking = false; blinkT = 0; blinkTimer = Math.floor(random(90, 260) / FRAME_TIME_SCALE); }
   } else if (--blinkTimer <= 0) {
     blinking = true;
     blinkT = 0;
@@ -915,7 +933,7 @@ function localDef(def) { return { ...def, x: def.x - RIG_ANCHOR_X0 }; }
 // check in updateRig() needs to compare against heroFish positions, which
 // live in world space, not the rig's local space.
 function hookLocalX() {
-  const sway = sin(frameCount * 0.02 + hookSwayPhase) * 4;
+  const sway = sin(frameCount * 0.02 * FRAME_TIME_SCALE + hookSwayPhase) * 4;
   return localX(HOOK_IMG_DEF.x) + sway;
 }
 function hookWorldX() {
@@ -949,29 +967,26 @@ function pickRigTarget() {
   rigDir = dir;
 }
 
-// Checks every live fish against the hook's current world position.
-// stopAtFirst=true (used while descending) grabs at most one fish and
-// returns immediately — a claw machine only grabs the first thing it
-// touches. stopAtFirst=false (used while ascending) keeps checking every
-// remaining fish, so several can be caught over the course of one trip up.
-function tryCatchAtHook(stopAtFirst) {
+// Checks every live fish against the hook's current world position and
+// grabs the first one within CATCH_RADIUS — at most one catch per cast, so
+// once caughtFish is set this is a no-op for the rest of the trip (called
+// again on the way up in case nothing bit on the way down).
+function tryCatchAtHook() {
+  if (caughtFish) return;
   const hx = hookWorldX(), hy = hookY;
-  let caughtAny = false;
-  for (let i = heroFish.length - 1; i >= 0; i--) {
+  for (let i = 0; i < heroFish.length; i++) {
     const fish = heroFish[i];
     if (dist(fish.x, fish.y, hx, hy) >= CATCH_RADIUS) continue;
     heroFish.splice(i, 1);
-    caughtFishList.push({ name: fish.name, h: fish.h });
+    caughtFish = { name: fish.name, h: fish.h };
     applyCatchHealthPenalty(fish.h);
     // mature fish already had its chance to reproduce — a juvenile
     // replacement grows in after a delay. A juvenile catch is permanent.
     if (fish.h >= HERO_FISH_MATURE_THRESHOLD) {
       pendingRespawns.push({ framesLeft: Math.floor(random(HERO_FISH_RESPAWN_FRAMES_MIN, HERO_FISH_RESPAWN_FRAMES_MAX)) });
     }
-    caughtAny = true;
-    if (stopAtFirst) return true;
+    return;
   }
-  return caughtAny;
 }
 
 function updateRig() {
@@ -981,22 +996,22 @@ function updateRig() {
       rigX = rigTargetX;
       rigState = 'casting';
       hookY = HOOK_REST_Y;
-      caughtFishList = [];
+      caughtFish = null;
     } else {
       rigX += Math.sign(delta) * RIG_MOVE_SPEED;
     }
   } else if (rigState === 'casting') {
     hookY = Math.min(hookY + HOOK_CAST_SPEED, HOOK_MAX_DEPTH_Y);
-    const caught = tryCatchAtHook(true);
-    if (caught || hookY >= HOOK_MAX_DEPTH_Y) {
+    tryCatchAtHook();
+    if (caughtFish || hookY >= HOOK_MAX_DEPTH_Y) {
       rigState = 'reeling';
     }
   } else if (rigState === 'reeling') {
     hookY = Math.max(hookY - HOOK_REEL_SPEED, HOOK_REST_Y);
-    tryCatchAtHook(false);
+    tryCatchAtHook();
     if (hookY <= HOOK_REST_Y) {
       rigState = 'moving';
-      caughtFishList = [];
+      caughtFish = null;
       pickRigTarget();
     }
   }
@@ -1008,13 +1023,13 @@ function updateRig() {
 // tiny on the hook and a bigger one looks bigger — CAUGHT_FISH_SIZE (the
 // pre-scaled buffer's own resolution) is set to the largest realistic
 // catch so this only ever scales down, never up.
-function drawCaughtFish(fish, x, y, phase) {
-  const cf = caughtFishBufs[fish.name];
-  const dispH = fish.h;
+function drawCaughtFish(x, y) {
+  const cf = caughtFishBufs[caughtFish.name];
+  const dispH = caughtFish.h;
   const dispW = dispH * (cf.w / cf.h);
   push();
   translate(x, y);
-  rotate(sin(frameCount * 0.6 + phase) * 0.18);
+  rotate(sin(frameCount * 0.6 * FRAME_TIME_SCALE) * 0.18);
   imageMode(CENTER);
   image(cf.buf, 0, 0, dispW, dispH);
   pop();
@@ -1027,10 +1042,9 @@ function drawRig() {
   const hookX = drawFishingLine();
   drawImgDef(rodImg, localDef(ROD_IMG_DEF));
   drawImgDef(hookImg, { x: hookX, y: hookY, w: HOOK_IMG_DEF.w, h: HOOK_IMG_DEF.h });
-  // caught fish dangle in a small stack below the hook, most recent lowest
-  caughtFishList.forEach((fish, i) => {
-    drawCaughtFish(fish, hookX + HOOK_IMG_DEF.w / 2, hookY + HOOK_IMG_DEF.h + 15 + i * 20, i * 1.3);
-  });
+  if (caughtFish) {
+    drawCaughtFish(hookX + HOOK_IMG_DEF.w / 2, hookY + HOOK_IMG_DEF.h + 15);
+  }
   drawImgDef(bodyImg, localDef(BODY_IMG_DEF));
   drawImgDef(headImg, localDef(HEAD_IMG_DEF));
   drawImgDef(hand1Img, { x: localX(HAND_DEFS[0].x), y: HAND_DEFS[0].y, w: HAND_DEFS[0].d, h: HAND_DEFS[0].d });
