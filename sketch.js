@@ -214,18 +214,74 @@ const CLOUD_SKY_TOP = HORIZON_Y * 0.16;
 // edge clear of HEAD_IMG_DEF.y.
 const CLOUD_HEAD_CLEARANCE = 15;
 
+// Hero catchable fish (Fish1/Fish2): the actual gameplay subject, unlike the
+// dim background BackFish silhouettes — full opacity, real color, drawn in
+// front of the reef. They swim on their own the same simple way the
+// background fish do (drift + wrap at the edges), independent of whatever
+// the boat is doing; the rod "catching" one is a separate scripted moment
+// (see the rig state machine below), not a proximity/collision check
+// against these live instances.
+// NOTE: this source art faces LEFT by default (eye/head on the left, tail
+// fin on the right) — the opposite convention from BackFish/Cloud, which
+// face right — so its mirror condition below is inverted accordingly.
+const HERO_FISH_ASSET_FILES = {
+  Fish1: 'Fish1.png',
+  Fish2: 'Fish2.png'
+};
+const HERO_FISH_SIZE = 70; // px, displayed height
+const HERO_FISH_SPEED = 0.55;
+const HERO_FISH_BAND = { top: HORIZON_Y + 40, bottom: HORIZON_Y + 280 };
+const CAUGHT_FISH_SIZE = 55; // px, displayed height while dangling on the hook
+
+// Boat/character rig: for A2 the boat drives itself (interaction is saved
+// for A3) — it picks a random spot on the water, sails there, fishes for a
+// while, then picks a new spot, repeating forever. Every part below
+// (BODY/HEAD/HAND/EYE/MOUTH/ROD/HOOK/LINE_ANCHOR_DEFS) was authored as
+// fixed absolute Figma coordinates for one static pose, so to make the
+// whole assembly movable+flippable as one rigid unit, everything gets
+// drawn inside a single translate(rigX, 0) + (flip) transform, using each
+// part's offset from RIG_ANCHOR_X0 (the boat's own original center) rather
+// than its raw absolute x. See localDef()/localX() and drawRig() below.
+const RIG_ANCHOR_X0 = BOAT_IMG_DEF.x + BOAT_IMG_DEF.w / 2;
+// How far the rig's bounding box reaches behind (the boat's own back/left
+// edge, currently the leftmost point of the whole assembly) and ahead (the
+// rod+hook side, plus a little slack for the hook's idle sway) of that
+// center — used to keep the whole box on-screen, including right up to
+// both edges, regardless of which way the boat ends up facing.
+const RIG_BACK_EXTENT = RIG_ANCHOR_X0 - BOAT_IMG_DEF.x;
+const RIG_FRONT_EXTENT = (HOOK_IMG_DEF.x + HOOK_IMG_DEF.w + 4) - RIG_ANCHOR_X0;
+const RIG_MOVE_SPEED = 4; // px/frame while sailing between spots
+const RIG_CAST_FRAMES = 18; // hook descending to fishing depth
+const RIG_WAIT_FRAMES_MIN = 60; // waiting for a bite, before reeling up
+const RIG_WAIT_FRAMES_MAX = 110;
+const RIG_REEL_FRAMES = 26; // hook (+ caught fish) rising back up
+const HOOK_REST_Y = HOOK_IMG_DEF.y; // idle/travelling depth
+const HOOK_CAST_Y = 600; // fishing depth — deep enough to read as "in the water"
+
 let stoneImgs = {};
 let kelps = [];
 let coralImgs = {};
 let fishImgs = {};
 let cloudImgs = {};
+let heroFishImgs = {};
+let caughtFishBufs = {};
 let fishRecolored = { back: {}, mid: {}, front: {} };
 let fishBack = [], fishMid = [], fishFront = [];
 let cloudBack = [], cloudFront = [];
+let heroFish = [];
 let reefBack = [], reefMid = [], reefFront = [];
 let bodyImg, headImg, hand1Img, hand2Img, mouthImg, boatImg, rodImg, hookImg;
 let blinkTimer = 90, blinking = false, blinkT = 0;
 let hookSwayPhase;
+
+// Rig movement/fishing state — see updateRig() for the state machine.
+let rigX = RIG_ANCHOR_X0;
+let rigDir = 1; // 1 = facing/travelling right, -1 = facing/travelling left
+let rigTargetX = RIG_ANCHOR_X0;
+let rigState = 'moving'; // 'moving' | 'casting' | 'waiting' | 'reeling'
+let rigStateT = 0; // frames elapsed in the current state
+let rigWaitFrames = 0;
+let caughtFishName = null;
 
 function preload() {
   bodyImg = loadImage('assets/body.png');
@@ -247,6 +303,9 @@ function preload() {
   });
   Object.entries(CLOUD_ASSET_FILES).forEach(([name, file]) => {
     cloudImgs[name] = loadImage('assets/' + file);
+  });
+  Object.entries(HERO_FISH_ASSET_FILES).forEach(([name, file]) => {
+    heroFishImgs[name] = loadImage('assets/' + file);
   });
 }
 
@@ -276,6 +335,8 @@ function setup() {
   fishFront = buildFishLayer('front', FISH_LAYER_DEFS.front);
   cloudBack = buildCloudLayer(CLOUD_LAYER_DEFS.back);
   cloudFront = buildCloudLayer(CLOUD_LAYER_DEFS.front);
+  heroFish = buildHeroFish();
+  buildCaughtFishBufs();
   hookSwayPhase = random(TWO_PI);
 }
 
@@ -313,22 +374,22 @@ function recolorSilhouette(img, topHex, bottomHex) {
   return g;
 }
 
-// The recolored buffers are still native PNG resolution (up to 1214x512).
-// Drawing straight from that every frame forces the canvas to redo a big
-// high-quality downscale (native -> ~50px) on every one of 20 fish, every
-// frame — the exact same lag cause already solved for the reef corals
-// (see REEF_SLICE_OVERSAMPLE above). Scaling each instance down to its real
-// on-screen size once, here at build time, means draw() just blits an
-// already-small buffer every frame instead of re-resampling a huge one.
-function fishToDisplaySize(img, dispW, dispH) {
+// Shared by every small on-screen sprite built from a much bigger source PNG
+// (ambient fish, clouds, the hero catchable fish below): drawing straight
+// from a huge native-resolution source every frame forces the canvas to
+// redo a big high-quality downscale on every instance, every frame — the
+// same lag cause already solved for the reef corals (see
+// REEF_SLICE_OVERSAMPLE above). Pre-scaling once, here at build time, means
+// draw() just blits an already-small buffer every frame instead.
+//
+// createGraphics() also defaults to pixel density 1 regardless of the main
+// canvas's own density (set via pixelDensity(displayDensity()) in setup,
+// often 1.5-3x on real screens). Without matching it here, this buffer's
+// actual raw pixels fall short of what the main canvas needs to fill the
+// same CSS-pixel area, so it gets stretched past its native resolution at
+// draw time and reads as pixelated — worse the smaller the buffer is.
+function preScaleToDisplaySize(img, dispW, dispH) {
   const g = createGraphics(Math.max(1, Math.ceil(dispW)), Math.max(1, Math.ceil(dispH)));
-  // createGraphics() defaults to pixel density 1 regardless of the main
-  // canvas's own density (set via pixelDensity(displayDensity()) in setup,
-  // often 1.5-3x on real screens). Without matching it here, this buffer's
-  // actual raw pixels fall short of what the main canvas needs to fill the
-  // same CSS-pixel area, so it gets stretched past its native resolution at
-  // draw time and reads as pixelated — worse the smaller the buffer is,
-  // which is why shrinking the size range surfaced it.
   g.pixelDensity(pixelDensity());
   g.drawingContext.imageSmoothingQuality = 'high';
   g.image(img, 0, 0, g.width, g.height);
@@ -353,7 +414,7 @@ function buildFishLayer(layerKey, def) {
       x: random(CANVAS_W),
       y: laneTop + laneH * random(0.2, 0.8),
       w, h,
-      buf: fishToDisplaySize(nativeBuf, w, h),
+      buf: preScaleToDisplaySize(nativeBuf, w, h),
       dir: random() < 0.5 ? 1 : -1,
       speedMul: random(0.85, 1.2),
       opacityMul: random(0.85, 1.15)
@@ -393,18 +454,6 @@ function drawFishLayer(layer, def) {
   layer.forEach(f => drawFishInstance(f, def));
 }
 
-// Same reasoning as fishToDisplaySize above: pre-scale once at build time
-// instead of asking the canvas to redo a huge (up to 2214x1080) downscale
-// every frame, and match the main canvas's own pixel density so this
-// doesn't fall back to a soft/blocky 1x buffer on real (non-1x) screens.
-function cloudToDisplaySize(img, dispW, dispH) {
-  const g = createGraphics(Math.max(1, Math.ceil(dispW)), Math.max(1, Math.ceil(dispH)));
-  g.pixelDensity(pixelDensity());
-  g.drawingContext.imageSmoothingQuality = 'high';
-  g.image(img, 0, 0, g.width, g.height);
-  return g;
-}
-
 function buildCloudLayer(def) {
   const names = Object.keys(CLOUD_ASSET_FILES);
   const clouds = [];
@@ -419,7 +468,7 @@ function buildCloudLayer(def) {
       x: random(CANVAS_W),
       y: random(CLOUD_SKY_TOP, bottomBound),
       w, h,
-      buf: cloudToDisplaySize(img, w, h),
+      buf: preScaleToDisplaySize(img, w, h),
       dir: random() < 0.5 ? 1 : -1,
       speedMul: random(0.8, 1.2)
     });
@@ -449,6 +498,61 @@ function drawCloudInstance(c, def) {
 function drawCloudLayer(layer, def) {
   updateCloudLayer(layer, def);
   layer.forEach(c => drawCloudInstance(c, def));
+}
+
+// ---- hero catchable fish (Fish1/Fish2) — always swimming, independent of
+// whatever the boat's rig is doing (see HERO_FISH_ASSET_FILES comment) ----
+
+function buildHeroFish() {
+  const names = Object.keys(HERO_FISH_ASSET_FILES);
+  return names.map(name => {
+    const img = heroFishImgs[name];
+    const h = HERO_FISH_SIZE * random(0.85, 1.15);
+    const w = h * (img.width / img.height);
+    return {
+      x: random(CANVAS_W),
+      y: random(HERO_FISH_BAND.top, HERO_FISH_BAND.bottom),
+      w, h,
+      buf: preScaleToDisplaySize(img, w, h),
+      dir: random() < 0.5 ? 1 : -1,
+      speedMul: random(0.85, 1.2)
+    };
+  });
+}
+
+function updateHeroFish() {
+  const baseSpeed = 1.3 * HERO_FISH_SPEED;
+  const margin = 160;
+  heroFish.forEach(f => {
+    f.x += f.dir * baseSpeed * f.speedMul;
+    if (f.dir === 1 && f.x > CANVAS_W + margin) f.x = -margin;
+    if (f.dir === -1 && f.x < -margin) f.x = CANVAS_W + margin;
+  });
+}
+
+function drawHeroFishInstance(f) {
+  push();
+  translate(f.x, f.y);
+  // source art faces LEFT by default — mirror when swimming right (opposite
+  // of the BackFish/cloud convention, which face right by default)
+  if (f.dir === 1) scale(-1, 1);
+  imageMode(CENTER);
+  image(f.buf, 0, 0, f.w, f.h);
+  pop();
+}
+
+function drawHeroFishLayer() {
+  updateHeroFish();
+  heroFish.forEach(drawHeroFishInstance);
+}
+
+function buildCaughtFishBufs() {
+  Object.keys(HERO_FISH_ASSET_FILES).forEach(name => {
+    const img = heroFishImgs[name];
+    const h = CAUGHT_FISH_SIZE;
+    const w = h * (img.width / img.height);
+    caughtFishBufs[name] = { buf: preScaleToDisplaySize(img, w, h), w, h };
+  });
 }
 
 // Picks one hand-built preset per rock layer into reefBack/reefMid/reefFront
@@ -564,21 +668,9 @@ function draw() {
   reefFront.forEach(drawReefInstance);
   drawStone('1st');
   kelps.forEach(drawTracedShape);
-  // Figma's own back-to-front order: fishing tools, then character, then
-  // boat — the boat's near rim sits in front of the character's lower
-  // body/legs so they read as sitting inside it, not floating on top.
-  const hookX = drawFishingLine();
-  drawImgDef(rodImg, ROD_IMG_DEF);
-  drawImgDef(hookImg, { x: hookX, y: HOOK_IMG_DEF.y, w: HOOK_IMG_DEF.w, h: HOOK_IMG_DEF.h });
-  drawImgDef(bodyImg, BODY_IMG_DEF);
-  drawImgDef(headImg, HEAD_IMG_DEF);
-  drawImgDef(hand1Img, { x: HAND_DEFS[0].x, y: HAND_DEFS[0].y, w: HAND_DEFS[0].d, h: HAND_DEFS[0].d });
-  drawImgDef(hand2Img, { x: HAND_DEFS[1].x, y: HAND_DEFS[1].y, w: HAND_DEFS[1].d, h: HAND_DEFS[1].d });
-  updateBlink();
-  const openness = eyeOpenness();
-  EYE_DEFS.forEach(e => drawEye(e, openness));
-  drawImgDef(mouthImg, MOUTH_IMG_DEF);
-  drawImgDef(boatImg, BOAT_IMG_DEF);
+  drawHeroFishLayer();
+  updateRig();
+  drawRig();
 }
 
 function drawImgDef(img, def) {
@@ -700,21 +792,132 @@ function drawEye(e, openness) {
   }
 }
 
-// The line is real geometry (not a traced shape) so a future fishing-game
-// mechanic can move the hook end and the line follows automatically. Returns
-// the hook's current x so the caller can draw the hook image at the same spot.
-function drawFishingLine() {
+// The line is real geometry (not a traced shape), so the hook end can move
+// independently of the rest of the rig and the line just follows — exactly
+// what the cast/wait/reel cycle below needs. Takes/returns local (rig-space)
+// coordinates since it's always called from inside drawRig()'s transform.
+// Returns the hook's current local x so the caller can draw the hook image
+// at the same spot.
+function drawFishingLine(hookY) {
   const sway = sin(frameCount * 0.02 + hookSwayPhase) * 4;
-  const hookX = HOOK_IMG_DEF.x + sway;
+  const hookX = localX(HOOK_IMG_DEF.x) + sway;
   const endX = hookX + HOOK_IMG_DEF.w / 2;
-  const endY = HOOK_IMG_DEF.y + 3;
+  const endY = hookY + 3;
   drawingContext.save();
   drawingContext.strokeStyle = PALETTE.blackPearl[2];
   drawingContext.lineWidth = 1.5;
   drawingContext.beginPath();
-  drawingContext.moveTo(LINE_ANCHOR.x, LINE_ANCHOR.y);
+  drawingContext.moveTo(localX(LINE_ANCHOR.x), LINE_ANCHOR.y);
   drawingContext.lineTo(endX, endY);
   drawingContext.stroke();
   drawingContext.restore();
   return hookX;
+}
+
+// ---- boat/character rig: movement, flip, and the cast/wait/reel fishing
+// cycle (see the comment above RIG_ANCHOR_X0 near the top of the file) ----
+
+function localX(x) { return x - RIG_ANCHOR_X0; }
+function localDef(def) { return { ...def, x: def.x - RIG_ANCHOR_X0 }; }
+
+function rigRangeFor(dir) {
+  return dir === 1
+    ? { min: RIG_BACK_EXTENT, max: CANVAS_W - RIG_FRONT_EXTENT }
+    : { min: RIG_FRONT_EXTENT, max: CANVAS_W - RIG_BACK_EXTENT };
+}
+
+// Picks a new spot to sail to. dir is decided first, then the target is
+// constrained to (a) keep the rig's whole bounding box on-screen for that
+// facing direction and (b) actually lie on that side of the current
+// position — otherwise the boat would end up moving one way while flipped
+// to visually face the other. If there's no room left in the rolled
+// direction (already at that side's extreme), it just turns around instead.
+function pickRigTarget() {
+  let dir = random() < 0.5 ? 1 : -1;
+  let range = rigRangeFor(dir);
+  let lo = dir === 1 ? Math.max(range.min, rigX) : range.min;
+  let hi = dir === 1 ? range.max : Math.min(range.max, rigX);
+  if (lo >= hi) {
+    dir *= -1;
+    range = rigRangeFor(dir);
+    lo = dir === 1 ? Math.max(range.min, rigX) : range.min;
+    hi = dir === 1 ? range.max : Math.min(range.max, rigX);
+  }
+  rigTargetX = random(lo, hi);
+  rigDir = dir;
+}
+
+function currentHookY() {
+  if (rigState === 'casting') return lerp(HOOK_REST_Y, HOOK_CAST_Y, constrain(rigStateT / RIG_CAST_FRAMES, 0, 1));
+  if (rigState === 'waiting') return HOOK_CAST_Y;
+  if (rigState === 'reeling') return lerp(HOOK_CAST_Y, HOOK_REST_Y, constrain(rigStateT / RIG_REEL_FRAMES, 0, 1));
+  return HOOK_REST_Y; // moving
+}
+
+function updateRig() {
+  rigStateT++;
+  if (rigState === 'moving') {
+    const delta = rigTargetX - rigX;
+    if (Math.abs(delta) <= RIG_MOVE_SPEED) {
+      rigX = rigTargetX;
+      rigState = 'casting';
+      rigStateT = 0;
+    } else {
+      rigX += Math.sign(delta) * RIG_MOVE_SPEED;
+    }
+  } else if (rigState === 'casting') {
+    if (rigStateT >= RIG_CAST_FRAMES) {
+      rigState = 'waiting';
+      rigStateT = 0;
+      rigWaitFrames = Math.floor(random(RIG_WAIT_FRAMES_MIN, RIG_WAIT_FRAMES_MAX));
+    }
+  } else if (rigState === 'waiting') {
+    if (rigStateT >= rigWaitFrames) {
+      rigState = 'reeling';
+      rigStateT = 0;
+      caughtFishName = random(Object.keys(HERO_FISH_ASSET_FILES));
+    }
+  } else if (rigState === 'reeling') {
+    if (rigStateT >= RIG_REEL_FRAMES) {
+      rigState = 'moving';
+      rigStateT = 0;
+      caughtFishName = null;
+      pickRigTarget();
+    }
+  }
+}
+
+// A little struggling wiggle while it dangles up on the line — purely
+// decorative, the sprite's own resting orientation is fine for this.
+function drawCaughtFish(x, y) {
+  const cf = caughtFishBufs[caughtFishName];
+  push();
+  translate(x, y);
+  rotate(sin(frameCount * 0.6) * 0.18);
+  imageMode(CENTER);
+  image(cf.buf, 0, 0, cf.w, cf.h);
+  pop();
+}
+
+function drawRig() {
+  const hookY = currentHookY();
+  push();
+  translate(rigX, 0);
+  if (rigDir === -1) scale(-1, 1);
+  const hookX = drawFishingLine(hookY);
+  drawImgDef(rodImg, localDef(ROD_IMG_DEF));
+  drawImgDef(hookImg, { x: hookX, y: hookY, w: HOOK_IMG_DEF.w, h: HOOK_IMG_DEF.h });
+  if (rigState === 'reeling' && caughtFishName) {
+    drawCaughtFish(hookX + HOOK_IMG_DEF.w / 2, hookY + HOOK_IMG_DEF.h + 15);
+  }
+  drawImgDef(bodyImg, localDef(BODY_IMG_DEF));
+  drawImgDef(headImg, localDef(HEAD_IMG_DEF));
+  drawImgDef(hand1Img, { x: localX(HAND_DEFS[0].x), y: HAND_DEFS[0].y, w: HAND_DEFS[0].d, h: HAND_DEFS[0].d });
+  drawImgDef(hand2Img, { x: localX(HAND_DEFS[1].x), y: HAND_DEFS[1].y, w: HAND_DEFS[1].d, h: HAND_DEFS[1].d });
+  updateBlink();
+  const openness = eyeOpenness();
+  EYE_DEFS.forEach(e => drawEye(localDef(e), openness));
+  drawImgDef(mouthImg, localDef(MOUTH_IMG_DEF));
+  drawImgDef(boatImg, localDef(BOAT_IMG_DEF));
+  pop();
 }
