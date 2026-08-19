@@ -313,6 +313,7 @@ const HOOK_MAX_DEPTH_Y = CANVAS_H - 30; // how far down the hook can drop if it 
 const HOOK_CAST_SPEED = 16 * FRAME_TIME_SCALE; // px/frame descending
 const HOOK_REEL_SPEED = 12 * FRAME_TIME_SCALE; // px/frame ascending — a little slower, reads as pulling something up
 
+let backgroundBuf;
 let stoneImgs = {};
 let kelps = [];
 let coralImgs = {};
@@ -367,8 +368,12 @@ function preload() {
 function setup() {
   // Canvas is drawn at 1920x1080 logical units either way, but rendering at
   // the screen's real device pixel ratio keeps that crisp instead of the
-  // browser stretching a 1x bitmap to fill a bigger/HiDPI display.
-  pixelDensity(displayDensity());
+  // browser stretching a 1x bitmap to fill a bigger/HiDPI display. Capped at
+  // 2x though — on a 3x+ display the raw ratio pushes the actual pixel count
+  // (and therefore every image()/gradient draw call's cost) up so much it
+  // was the main cause of a reported ~20fps average; 2x is still plenty
+  // sharp for this kind of flat illustration.
+  pixelDensity(Math.min(displayDensity(), 2));
   const canvas = createCanvas(CANVAS_W, CANVAS_H);
   canvas.parent('sketch-holder');
   frameRate(FRAME_RATE);
@@ -383,6 +388,7 @@ function setup() {
   // the PNG-based reef. Re-enable via `kelps = KELP_DEFS.map(makeTracedInstance);`
   // once a Kelp PNG is exported.
   kelps = [];
+  backgroundBuf = buildBackground();
   buildReef();
   buildFishRecolors();
   fishBack = buildFishLayer('back', FISH_LAYER_DEFS.back);
@@ -762,8 +768,7 @@ function drawReefInstance(inst) {
 // its own contour line, and every later (nearer) layer naturally re-occludes
 // whatever pokes into its own silhouette too.
 function draw() {
-  fillGradientRect(0, 0, CANVAS_W, HORIZON_Y, PALETTE.blackPearl[0], PALETTE.blackPearl[2]);
-  fillGradientRect(0, HORIZON_Y, CANVAS_W, CANVAS_H - HORIZON_Y, PALETTE.oceanBlue[2], PALETTE.oceanBlue[3]);
+  image(backgroundBuf, 0, 0, CANVAS_W, CANVAS_H);
   drawCloudLayer(cloudBack, CLOUD_LAYER_DEFS.back);
   drawCloudLayer(cloudFront, CLOUD_LAYER_DEFS.front);
   drawFishLayer(fishBack, FISH_LAYER_DEFS.back);
@@ -797,12 +802,25 @@ function drawImgDef(img, def) {
   image(img, def.x, def.y, def.w, def.h);
 }
 
-function fillGradientRect(x, y, w, h, hexTop, hexBottom) {
-  const g = drawingContext.createLinearGradient(0, y, 0, y + h);
+function fillGradientRect(ctx, x, y, w, h, hexTop, hexBottom) {
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
   g.addColorStop(0, hexTop);
   g.addColorStop(1, hexBottom);
-  drawingContext.fillStyle = g;
-  drawingContext.fillRect(x, y, w, h);
+  ctx.fillStyle = g;
+  ctx.fillRect(x, y, w, h);
+}
+
+// The sky/water gradient never changes frame to frame, so it's rendered
+// once here into an offscreen buffer instead of recreating 2 canvas
+// gradients and refilling the whole canvas every single frame — this and
+// the pixelDensity cap in setup() were the two biggest wins for a reported
+// ~20fps average.
+function buildBackground() {
+  const buf = createGraphics(CANVAS_W, CANVAS_H);
+  buf.pixelDensity(pixelDensity());
+  fillGradientRect(buf.drawingContext, 0, 0, CANVAS_W, HORIZON_Y, PALETTE.blackPearl[0], PALETTE.blackPearl[2]);
+  fillGradientRect(buf.drawingContext, 0, HORIZON_Y, CANVAS_W, CANVAS_H - HORIZON_Y, PALETTE.oceanBlue[2], PALETTE.oceanBlue[3]);
+  return buf;
 }
 
 // Real static art (see STONE_DEFS) — width always matches CANVAS_W exactly,
