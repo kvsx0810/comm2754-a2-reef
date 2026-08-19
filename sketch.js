@@ -216,11 +216,14 @@ const CLOUD_HEAD_CLEARANCE = 15;
 
 // Hero catchable fish (Fish1/Fish2): the actual gameplay subject, unlike the
 // dim background BackFish silhouettes — full opacity, real color, drawn in
-// front of the reef. They swim on their own the same simple way the
-// background fish do (drift + wrap at the edges), independent of whatever
-// the boat is doing; the rod "catching" one is a separate scripted moment
-// (see the rig state machine below), not a proximity/collision check
-// against these live instances.
+// front of the reef. A big population (many instances of the same 2
+// species, sizes varied to read as a mix of juveniles and mature fish) so
+// there's something visible to actually deplete. They swim on their own,
+// independent of whatever the boat is doing; the rod "catching" one happens
+// via real proximity — when the hook is down and waiting, any fish that
+// drifts within CATCH_RADIUS of it is caught and permanently removed from
+// this array (see updateRig()'s 'waiting' branch) — not a scripted/random
+// pick, so as the population thins, catches naturally get rarer too.
 // NOTE: this source art faces LEFT by default (eye/head on the left, tail
 // fin on the right) — the opposite convention from BackFish/Cloud, which
 // face right — so its mirror condition below is inverted accordingly.
@@ -228,10 +231,31 @@ const HERO_FISH_ASSET_FILES = {
   Fish1: 'Fish1.png',
   Fish2: 'Fish2.png'
 };
-const HERO_FISH_SIZE = 70; // px, displayed height
-const HERO_FISH_SPEED = 0.55;
+const HERO_FISH_COUNT = 30;
+const HERO_FISH_SIZE = 70; // px, reference height
+// Wide on purpose — reads as a real mix of small (juvenile) and large
+// (mature) fish, which matters for the health-penalty logic below: catching
+// a juvenile before it can reproduce is worse for the population than
+// catching an adult, so a caught fish's own size drives how much it costs.
+const HERO_FISH_SIZE_MIN = HERO_FISH_SIZE * 0.45;
+const HERO_FISH_SIZE_MAX = HERO_FISH_SIZE * 1.9;
+const HERO_FISH_SPEED = 1.3;
 const HERO_FISH_BAND = { top: HORIZON_Y + 40, bottom: HORIZON_Y + 280 };
-const CAUGHT_FISH_SIZE = 55; // px, displayed height while dangling on the hook
+const CATCH_RADIUS = 45; // px, how close a fish has to drift to a waiting hook to bite
+const CAUGHT_FISH_SIZE = 130; // px — pre-scale buffer resolution; actual draw size follows the real caught fish's own height (see drawCaughtFish), always scaling down from this, never up
+
+// Reef/ecosystem "health": starts full, only ever goes down (SDG 14.4 is
+// about overfishing depleting stocks — there's no auto-recovery here, a
+// fully fished-out lake just stays empty). Every hero-fish catch costs some
+// health, more for a small/juvenile fish than a large/mature one. Health
+// drives two other systems purely visually: how much of the ambient
+// BackFish population is still rendered (drawFishLayer), and how sluggish
+// the reef's own sway animation reads (drawReefInstance) — the whole scene
+// should feel like it's visibly losing life, not just the hero fish count.
+let reefHealth = 1.0;
+const REEF_HEALTH_PENALTY_SMALL = 0.06; // cost of catching the smallest fish
+const REEF_HEALTH_PENALTY_LARGE = 0.02; // cost of catching the largest fish
+const REEF_HEALTH_VITALITY_FLOOR = 0.15; // reef sway never fully freezes, just reads as barely alive
 
 // Boat/character rig: for A2 the boat drives itself (interaction is saved
 // for A3) — it picks a random spot on the water, sails there, fishes for a
@@ -282,6 +306,7 @@ let rigState = 'moving'; // 'moving' | 'casting' | 'waiting' | 'reeling'
 let rigStateT = 0; // frames elapsed in the current state
 let rigWaitFrames = 0;
 let caughtFishName = null;
+let caughtFishDispH = CAUGHT_FISH_SIZE;
 
 function preload() {
   bodyImg = loadImage('assets/body.png');
@@ -449,9 +474,15 @@ function drawFishInstance(f, def) {
   pop();
 }
 
+// As reefHealth drops (see the comment above its declaration), only a
+// shrinking prefix of each ambient layer stays active — the rest just never
+// gets updated or drawn again. Since reefHealth only ever decreases, a fish
+// that drops out of the active range never needs to come back.
 function drawFishLayer(layer, def) {
-  updateFishLayer(layer, def);
-  layer.forEach(f => drawFishInstance(f, def));
+  const activeCount = Math.ceil(layer.length * reefHealth);
+  const active = layer.slice(0, activeCount);
+  updateFishLayer(active, def);
+  active.forEach(f => drawFishInstance(f, def));
 }
 
 function buildCloudLayer(def) {
@@ -505,19 +536,23 @@ function drawCloudLayer(layer, def) {
 
 function buildHeroFish() {
   const names = Object.keys(HERO_FISH_ASSET_FILES);
-  return names.map(name => {
+  const fish = [];
+  for (let i = 0; i < HERO_FISH_COUNT; i++) {
+    const name = random(names);
     const img = heroFishImgs[name];
-    const h = HERO_FISH_SIZE * random(0.85, 1.15);
+    const h = random(HERO_FISH_SIZE_MIN, HERO_FISH_SIZE_MAX);
     const w = h * (img.width / img.height);
-    return {
+    fish.push({
+      name, // needed at catch time — which sprite to show dangling on the hook
       x: random(CANVAS_W),
       y: random(HERO_FISH_BAND.top, HERO_FISH_BAND.bottom),
       w, h,
       buf: preScaleToDisplaySize(img, w, h),
       dir: random() < 0.5 ? 1 : -1,
       speedMul: random(0.85, 1.2)
-    };
-  });
+    });
+  }
+  return fish;
 }
 
 function updateHeroFish() {
@@ -553,6 +588,15 @@ function buildCaughtFishBufs() {
     const w = h * (img.width / img.height);
     caughtFishBufs[name] = { buf: preScaleToDisplaySize(img, w, h), w, h };
   });
+}
+
+// Smaller caught fish cost more health than bigger ones — catching
+// juveniles before they can reproduce is the specific overfishing practice
+// SDG 14.4 calls out, so it should hit the ecosystem harder here too.
+function applyCatchHealthPenalty(caughtH) {
+  const smallness = constrain(map(caughtH, HERO_FISH_SIZE_MIN, HERO_FISH_SIZE_MAX, 1, 0), 0, 1);
+  const penalty = lerp(REEF_HEALTH_PENALTY_LARGE, REEF_HEALTH_PENALTY_SMALL, smallness);
+  reefHealth = constrain(reefHealth - penalty, 0, 1);
 }
 
 // Picks one hand-built preset per rock layer into reefBack/reefMid/reefFront
@@ -627,7 +671,9 @@ function scaleToDisplaySize(img, dispW, dispH) {
 function drawReefInstance(inst) {
   const stripH = inst.buf.height / REEF_STRIPS;
   const dispStripH = inst.h / REEF_STRIPS + 0.6; // slight overlap avoids seam lines
-  const effSpeed = REEF_SWAY_SPEED * inst.speedMul;
+  // as reefHealth drops the whole reef should read as more sluggish/lifeless
+  const vitality = lerp(REEF_HEALTH_VITALITY_FLOOR, 1, reefHealth);
+  const effSpeed = REEF_SWAY_SPEED * inst.speedMul * vitality;
 
   for (let i = 0; i < REEF_STRIPS; i++) {
     const t = i / (REEF_STRIPS - 1); // 0 = base, 1 = tip
@@ -799,8 +845,7 @@ function drawEye(e, openness) {
 // Returns the hook's current local x so the caller can draw the hook image
 // at the same spot.
 function drawFishingLine(hookY) {
-  const sway = sin(frameCount * 0.02 + hookSwayPhase) * 4;
-  const hookX = localX(HOOK_IMG_DEF.x) + sway;
+  const hookX = hookLocalX();
   const endX = hookX + HOOK_IMG_DEF.w / 2;
   const endY = hookY + 3;
   drawingContext.save();
@@ -819,6 +864,19 @@ function drawFishingLine(hookY) {
 
 function localX(x) { return x - RIG_ANCHOR_X0; }
 function localDef(def) { return { ...def, x: def.x - RIG_ANCHOR_X0 }; }
+
+// The hook's local x (its own idle sway, same formula drawFishingLine used
+// to compute directly) and its world x — accounting for the rig's own
+// translate(rigX,0) + possible scale(-1,1) flip — since the catch-proximity
+// check in updateRig() needs to compare against heroFish positions, which
+// live in world space, not the rig's local space.
+function hookLocalX() {
+  const sway = sin(frameCount * 0.02 + hookSwayPhase) * 4;
+  return localX(HOOK_IMG_DEF.x) + sway;
+}
+function hookWorldX() {
+  return rigX + rigDir * hookLocalX();
+}
 
 function rigRangeFor(dir) {
   return dir === 1
@@ -872,10 +930,28 @@ function updateRig() {
       rigWaitFrames = Math.floor(random(RIG_WAIT_FRAMES_MIN, RIG_WAIT_FRAMES_MAX));
     }
   } else if (rigState === 'waiting') {
-    if (rigStateT >= rigWaitFrames) {
+    // real proximity catch: any live hero fish that drifts within
+    // CATCH_RADIUS of the waiting hook gets caught and permanently removed
+    // — not a scripted pick, so this naturally gets rarer as the population
+    // thins (fewer fish around to swim past the hook at all)
+    const hx = hookWorldX(), hy = HOOK_CAST_Y;
+    let caughtIdx = -1, bestDist = CATCH_RADIUS;
+    for (let i = 0; i < heroFish.length; i++) {
+      const d = dist(heroFish[i].x, heroFish[i].y, hx, hy);
+      if (d < bestDist) { bestDist = d; caughtIdx = i; }
+    }
+    if (caughtIdx !== -1) {
+      const fish = heroFish[caughtIdx];
+      caughtFishName = fish.name;
+      caughtFishDispH = fish.h;
+      heroFish.splice(caughtIdx, 1);
+      applyCatchHealthPenalty(fish.h);
       rigState = 'reeling';
       rigStateT = 0;
-      caughtFishName = random(Object.keys(HERO_FISH_ASSET_FILES));
+    } else if (rigStateT >= rigWaitFrames) {
+      caughtFishName = null; // nothing bit this time — hook comes back up empty
+      rigState = 'reeling';
+      rigStateT = 0;
     }
   } else if (rigState === 'reeling') {
     if (rigStateT >= RIG_REEL_FRAMES) {
@@ -889,13 +965,20 @@ function updateRig() {
 
 // A little struggling wiggle while it dangles up on the line — purely
 // decorative, the sprite's own resting orientation is fine for this.
+// Drawn at the actual caught fish's own size (caughtFishDispH, set in
+// updateRig() at catch time) rather than a fixed size, so a tiny juvenile
+// visibly looks tiny on the hook and a big one looks big — CAUGHT_FISH_SIZE
+// (the pre-scaled buffer's own resolution) is set to the largest realistic
+// catch so this only ever scales down, never up.
 function drawCaughtFish(x, y) {
   const cf = caughtFishBufs[caughtFishName];
+  const dispH = caughtFishDispH;
+  const dispW = dispH * (cf.w / cf.h);
   push();
   translate(x, y);
   rotate(sin(frameCount * 0.6) * 0.18);
   imageMode(CENTER);
-  image(cf.buf, 0, 0, cf.w, cf.h);
+  image(cf.buf, 0, 0, dispW, dispH);
   pop();
 }
 
