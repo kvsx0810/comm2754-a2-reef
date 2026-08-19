@@ -173,8 +173,10 @@ const REEF_SCALE = 0.65;
 // number of horizontal "lanes" spanning the swim band, one fish per lane —
 // so no two fish ever share a line by construction, and each fish's own
 // direction is free to be random independently.
+// BackFish1 dropped from the rotation — didn't read as nicely as the other
+// two once seen in the scene. File stays in assets/ in case it's wanted
+// again later, just not referenced here.
 const FISH_ASSET_FILES = {
-  BackFish1: 'BackFish1.png',
   BackFish2: 'BackFish2.png',
   BackFish3: 'BackFish3.png'
 };
@@ -301,7 +303,11 @@ function buildFishLayer(layerKey, def) {
     // neighboring lane's line
     const laneTop = band.top + i * laneH;
     const name = random(names);
-    const z = random(0.8, 1.2);
+    // widened from (0.8, 1.2) — that range read as basically same-size fish
+    // within a layer, with only the per-layer base size (def.size) actually
+    // visible as a size difference. This makes individual fish in the same
+    // layer noticeably vary too, not just across depth tiers.
+    const z = random(0.6, 1.5);
     const nativeBuf = fishRecolored[layerKey][name];
     const h = def.size * z;
     const w = h * (nativeBuf.width / nativeBuf.height);
