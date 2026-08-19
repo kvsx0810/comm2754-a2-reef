@@ -190,12 +190,34 @@ const FISH_LAYER_DEFS = {
   front: { count: 6, sizeMin: 36, sizeMax: 48, speed: 1.30, opacity: 1.00, top: PALETTE.blackPearl[0], bottom: PALETTE.blackPearl[1] }
 };
 
+// Background clouds: 2 depth layers drifting slowly across the sky, each
+// with a gentle vertical bob so they read as floating rather than sliding.
+// Unlike the fish PNGs, these are exported already colored (a teal/navy
+// gradient that already matches the sky palette), so no recolor step is
+// needed — just scale down and place. The source export is "full HD"
+// (up to 2214x1080, bigger than the whole canvas), so the same
+// pre-scale-once-at-build-time treatment as the fish applies here too,
+// otherwise every cloud would redo a huge downscale every frame.
+const CLOUD_ASSET_FILES = {
+  Cloud1: 'Cloud1.png',
+  Cloud2: 'Cloud2.png'
+};
+const CLOUD_LAYER_DEFS = {
+  back:  { count: 3, widthMin: 160, widthMax: 240, speed: 0.12, opacity: 0.55 },
+  front: { count: 3, widthMin: 230, widthMax: 340, speed: 0.22, opacity: 0.85 }
+};
+// Keeps clouds clear of the very top edge and away from the horizon line.
+const CLOUD_SKY_TOP = HORIZON_Y * 0.16;
+const CLOUD_SKY_BOTTOM = HORIZON_Y * 0.72;
+
 let stoneImgs = {};
 let kelps = [];
 let coralImgs = {};
 let fishImgs = {};
+let cloudImgs = {};
 let fishRecolored = { back: {}, mid: {}, front: {} };
 let fishBack = [], fishMid = [], fishFront = [];
+let cloudBack = [], cloudFront = [];
 let reefBack = [], reefMid = [], reefFront = [];
 let bodyImg, headImg, hand1Img, hand2Img, mouthImg, boatImg, rodImg, hookImg;
 let blinkTimer = 90, blinking = false, blinkT = 0;
@@ -218,6 +240,9 @@ function preload() {
   });
   Object.entries(FISH_ASSET_FILES).forEach(([name, file]) => {
     fishImgs[name] = loadImage('assets/' + file);
+  });
+  Object.entries(CLOUD_ASSET_FILES).forEach(([name, file]) => {
+    cloudImgs[name] = loadImage('assets/' + file);
   });
 }
 
@@ -245,6 +270,8 @@ function setup() {
   fishBack = buildFishLayer('back', FISH_LAYER_DEFS.back);
   fishMid = buildFishLayer('mid', FISH_LAYER_DEFS.mid);
   fishFront = buildFishLayer('front', FISH_LAYER_DEFS.front);
+  cloudBack = buildCloudLayer(CLOUD_LAYER_DEFS.back);
+  cloudFront = buildCloudLayer(CLOUD_LAYER_DEFS.front);
   hookSwayPhase = random(TWO_PI);
 }
 
@@ -362,6 +389,65 @@ function drawFishLayer(layer, def) {
   layer.forEach(f => drawFishInstance(f, def));
 }
 
+// Same reasoning as fishToDisplaySize above: pre-scale once at build time
+// instead of asking the canvas to redo a huge (up to 2214x1080) downscale
+// every frame, and match the main canvas's own pixel density so this
+// doesn't fall back to a soft/blocky 1x buffer on real (non-1x) screens.
+function cloudToDisplaySize(img, dispW, dispH) {
+  const g = createGraphics(Math.max(1, Math.ceil(dispW)), Math.max(1, Math.ceil(dispH)));
+  g.pixelDensity(pixelDensity());
+  g.drawingContext.imageSmoothingQuality = 'high';
+  g.image(img, 0, 0, g.width, g.height);
+  return g;
+}
+
+function buildCloudLayer(def) {
+  const names = Object.keys(CLOUD_ASSET_FILES);
+  const clouds = [];
+  for (let i = 0; i < def.count; i++) {
+    const img = cloudImgs[random(names)];
+    const w = random(def.widthMin, def.widthMax);
+    const h = w * (img.height / img.width);
+    clouds.push({
+      x: random(CANVAS_W),
+      baseY: random(CLOUD_SKY_TOP, CLOUD_SKY_BOTTOM),
+      w, h,
+      buf: cloudToDisplaySize(img, w, h),
+      dir: random() < 0.5 ? 1 : -1,
+      speedMul: random(0.8, 1.2),
+      bobAmp: random(4, 10),
+      bobSpeed: random(0.006, 0.014),
+      phase: random(TWO_PI)
+    });
+  }
+  return clouds;
+}
+
+function updateCloudLayer(layer, def) {
+  const baseSpeed = 1.3 * def.speed;
+  const margin = 200;
+  layer.forEach(c => {
+    c.x += c.dir * baseSpeed * c.speedMul;
+    if (c.dir === 1 && c.x > CANVAS_W + margin) c.x = -margin;
+    if (c.dir === -1 && c.x < -margin) c.x = CANVAS_W + margin;
+  });
+}
+
+function drawCloudInstance(c, def) {
+  const y = c.baseY + sin(frameCount * c.bobSpeed + c.phase) * c.bobAmp;
+  push();
+  translate(c.x, y);
+  imageMode(CENTER);
+  tint(255, 255, 255, 255 * def.opacity);
+  image(c.buf, 0, 0, c.w, c.h);
+  pop();
+}
+
+function drawCloudLayer(layer, def) {
+  updateCloudLayer(layer, def);
+  layer.forEach(c => drawCloudInstance(c, def));
+}
+
 // Picks one hand-built preset per rock layer into reefBack/reefMid/reefFront
 // so draw() can slot each one in right before its own layer is painted on
 // top of it (see draw() below for why).
@@ -463,6 +549,8 @@ function drawReefInstance(inst) {
 function draw() {
   fillGradientRect(0, 0, CANVAS_W, HORIZON_Y, PALETTE.blackPearl[0], PALETTE.blackPearl[2]);
   fillGradientRect(0, HORIZON_Y, CANVAS_W, CANVAS_H - HORIZON_Y, PALETTE.oceanBlue[2], PALETTE.oceanBlue[3]);
+  drawCloudLayer(cloudBack, CLOUD_LAYER_DEFS.back);
+  drawCloudLayer(cloudFront, CLOUD_LAYER_DEFS.front);
   drawFishLayer(fishBack, FISH_LAYER_DEFS.back);
   reefBack.forEach(drawReefInstance);
   drawStone('3rd');
