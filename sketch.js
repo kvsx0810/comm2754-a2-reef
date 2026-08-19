@@ -238,7 +238,7 @@ const HERO_FISH_SIZE = 70; // px, reference height
 // a juvenile before it can reproduce is worse for the population than
 // catching an adult, so a caught fish's own size drives how much it costs.
 const HERO_FISH_SIZE_MIN = HERO_FISH_SIZE * 0.45;
-const HERO_FISH_SIZE_MAX = HERO_FISH_SIZE * 1.2;
+const HERO_FISH_SIZE_MAX = HERO_FISH_SIZE * 0.85;
 // A caught fish at or above this size already had its chance to reproduce,
 // so catching it is more sustainable — see the respawn logic in updateRig()
 // and spawnJuvenileFish() below. Below this size, a catch is permanent.
@@ -246,9 +246,14 @@ const HERO_FISH_MATURE_THRESHOLD = (HERO_FISH_SIZE_MIN + HERO_FISH_SIZE_MAX) / 2
 const HERO_FISH_RESPAWN_FRAMES_MIN = 150; // ~5s @ 30fps
 const HERO_FISH_RESPAWN_FRAMES_MAX = 300; // ~10s @ 30fps
 const HERO_FISH_SPEED = 1.3;
-const HERO_FISH_BAND = { top: HORIZON_Y + 40, bottom: HORIZON_Y + 280 };
-const CATCH_RADIUS = 45; // px, how close a fish has to drift to a waiting hook to bite
-const CAUGHT_FISH_SIZE = 130; // px — pre-scale buffer resolution; actual draw size follows the real caught fish's own height (see drawCaughtFish), always scaling down from this, never up
+// Spread through nearly the whole water column, not just the upper band —
+// they're free to overlap the rock layers/coral/BackFish, all of which are
+// purely decorative background, not something the hero fish need to stay
+// clear of.
+const HERO_FISH_BAND = { top: HORIZON_Y + 30, bottom: CANVAS_H - 20 };
+const HERO_FISH_EDGE_SPAWN_MARGIN = 40; // extra clearance so a respawned fish starts fully off-screen, not clipped at the edge
+const CATCH_RADIUS = 45; // px, how close a fish has to be to the hook to get caught
+const CAUGHT_FISH_SIZE = 75; // px — pre-scale buffer resolution; actual draw size follows each caught fish's own height (see drawCaughtFish), always scaling down from this, never up
 
 // Reef/ecosystem "health": starts full, only ever goes down (SDG 14.4 is
 // about overfishing depleting stocks — there's no auto-recovery here, a
@@ -283,12 +288,16 @@ const RIG_ANCHOR_X0 = BOAT_IMG_DEF.x + BOAT_IMG_DEF.w / 2;
 const RIG_BACK_EXTENT = RIG_ANCHOR_X0 - BOAT_IMG_DEF.x;
 const RIG_FRONT_EXTENT = (HOOK_IMG_DEF.x + HOOK_IMG_DEF.w + 4) - RIG_ANCHOR_X0;
 const RIG_MOVE_SPEED = 4; // px/frame while sailing between spots
-const RIG_CAST_FRAMES = 18; // hook descending to fishing depth
-const RIG_WAIT_FRAMES_MIN = 60; // waiting for a bite, before reeling up
-const RIG_WAIT_FRAMES_MAX = 110;
-const RIG_REEL_FRAMES = 26; // hook (+ caught fish) rising back up
-const HOOK_REST_Y = HOOK_IMG_DEF.y; // idle/travelling depth
-const HOOK_CAST_Y = 600; // fishing depth — deep enough to read as "in the water"
+
+// Claw-machine fishing: the hook drops straight down and grabs the very
+// FIRST fish it touches (not a fixed depth + wait) — unlike a claw machine
+// though, the trip back up isn't "one grab and done": any fish the hook
+// passes near on the way back up gets caught too, so one cast can bring up
+// several fish. See updateRig()'s 'casting'/'reeling' branches.
+const HOOK_REST_Y = HOOK_IMG_DEF.y; // idle/travelling depth, start and end of every cast
+const HOOK_MAX_DEPTH_Y = CANVAS_H - 30; // how far down the hook can drop if it never touches a fish
+const HOOK_CAST_SPEED = 8; // px/frame descending
+const HOOK_REEL_SPEED = 6; // px/frame ascending — a little slower, reads as pulling something up
 
 let stoneImgs = {};
 let kelps = [];
@@ -311,11 +320,9 @@ let hookSwayPhase;
 let rigX = RIG_ANCHOR_X0;
 let rigDir = 1; // 1 = facing/travelling right, -1 = facing/travelling left
 let rigTargetX = RIG_ANCHOR_X0;
-let rigState = 'moving'; // 'moving' | 'casting' | 'waiting' | 'reeling'
-let rigStateT = 0; // frames elapsed in the current state
-let rigWaitFrames = 0;
-let caughtFishName = null;
-let caughtFishDispH = CAUGHT_FISH_SIZE;
+let rigState = 'moving'; // 'moving' | 'casting' | 'reeling'
+let hookY = HOOK_REST_Y; // stateful — the descent can stop early on a catch, so this isn't a simple lerp between two fixed points
+let caughtFishList = []; // fish caught during the current cast, still dangling on the way up — [{name, h}]
 
 function preload() {
   bodyImg = loadImage('assets/body.png');
@@ -543,17 +550,23 @@ function drawCloudLayer(layer, def) {
 // ---- hero catchable fish (Fish1/Fish2) — always swimming, independent of
 // whatever the boat's rig is doing (see HERO_FISH_ASSET_FILES comment) ----
 
-function makeHeroFish(name, hMin, hMax) {
+// spawnFromEdge=true (used for respawns, not the initial population) starts
+// the fish just past whichever screen edge matches its own swim direction,
+// so it visibly swims in rather than just appearing mid-lake.
+function makeHeroFish(name, hMin, hMax, spawnFromEdge) {
   const img = heroFishImgs[name];
   const h = random(hMin, hMax);
   const w = h * (img.width / img.height);
+  const dir = random() < 0.5 ? 1 : -1;
+  const edgeMargin = w + HERO_FISH_EDGE_SPAWN_MARGIN;
+  const x = spawnFromEdge ? (dir === 1 ? -edgeMargin : CANVAS_W + edgeMargin) : random(CANVAS_W);
   return {
     name, // needed at catch time — which sprite to show dangling on the hook
-    x: random(CANVAS_W),
+    x,
     y: random(HERO_FISH_BAND.top, HERO_FISH_BAND.bottom),
     w, h,
     buf: preScaleToDisplaySize(img, w, h),
-    dir: random() < 0.5 ? 1 : -1,
+    dir,
     speedMul: random(0.85, 1.2)
   };
 }
@@ -562,17 +575,18 @@ function buildHeroFish() {
   const names = Object.keys(HERO_FISH_ASSET_FILES);
   const fish = [];
   for (let i = 0; i < HERO_FISH_COUNT; i++) {
-    fish.push(makeHeroFish(random(names), HERO_FISH_SIZE_MIN, HERO_FISH_SIZE_MAX));
+    fish.push(makeHeroFish(random(names), HERO_FISH_SIZE_MIN, HERO_FISH_SIZE_MAX, false));
   }
   return fish;
 }
 
 // A mature fish that gets caught already had its chance to reproduce, so
 // after its respawn delay elapses, a new juvenile (not a full-grown
-// replacement) takes its place — offspring start small.
+// replacement) takes its place — offspring start small, and swim in from
+// off-screen rather than popping into existence mid-lake.
 function spawnJuvenileFish() {
   const names = Object.keys(HERO_FISH_ASSET_FILES);
-  return makeHeroFish(random(names), HERO_FISH_SIZE_MIN, HERO_FISH_MATURE_THRESHOLD);
+  return makeHeroFish(random(names), HERO_FISH_SIZE_MIN, HERO_FISH_MATURE_THRESHOLD, true);
 }
 
 function updateFishSpawns() {
@@ -874,7 +888,7 @@ function drawEye(e, openness) {
 // coordinates since it's always called from inside drawRig()'s transform.
 // Returns the hook's current local x so the caller can draw the hook image
 // at the same spot.
-function drawFishingLine(hookY) {
+function drawFishingLine() {
   const hookX = hookLocalX();
   const endX = hookX + HOOK_IMG_DEF.w / 2;
   const endY = hookY + 3;
@@ -935,99 +949,88 @@ function pickRigTarget() {
   rigDir = dir;
 }
 
-function currentHookY() {
-  if (rigState === 'casting') return lerp(HOOK_REST_Y, HOOK_CAST_Y, constrain(rigStateT / RIG_CAST_FRAMES, 0, 1));
-  if (rigState === 'waiting') return HOOK_CAST_Y;
-  if (rigState === 'reeling') return lerp(HOOK_CAST_Y, HOOK_REST_Y, constrain(rigStateT / RIG_REEL_FRAMES, 0, 1));
-  return HOOK_REST_Y; // moving
+// Checks every live fish against the hook's current world position.
+// stopAtFirst=true (used while descending) grabs at most one fish and
+// returns immediately — a claw machine only grabs the first thing it
+// touches. stopAtFirst=false (used while ascending) keeps checking every
+// remaining fish, so several can be caught over the course of one trip up.
+function tryCatchAtHook(stopAtFirst) {
+  const hx = hookWorldX(), hy = hookY;
+  let caughtAny = false;
+  for (let i = heroFish.length - 1; i >= 0; i--) {
+    const fish = heroFish[i];
+    if (dist(fish.x, fish.y, hx, hy) >= CATCH_RADIUS) continue;
+    heroFish.splice(i, 1);
+    caughtFishList.push({ name: fish.name, h: fish.h });
+    applyCatchHealthPenalty(fish.h);
+    // mature fish already had its chance to reproduce — a juvenile
+    // replacement grows in after a delay. A juvenile catch is permanent.
+    if (fish.h >= HERO_FISH_MATURE_THRESHOLD) {
+      pendingRespawns.push({ framesLeft: Math.floor(random(HERO_FISH_RESPAWN_FRAMES_MIN, HERO_FISH_RESPAWN_FRAMES_MAX)) });
+    }
+    caughtAny = true;
+    if (stopAtFirst) return true;
+  }
+  return caughtAny;
 }
 
 function updateRig() {
-  rigStateT++;
   if (rigState === 'moving') {
     const delta = rigTargetX - rigX;
     if (Math.abs(delta) <= RIG_MOVE_SPEED) {
       rigX = rigTargetX;
       rigState = 'casting';
-      rigStateT = 0;
+      hookY = HOOK_REST_Y;
+      caughtFishList = [];
     } else {
       rigX += Math.sign(delta) * RIG_MOVE_SPEED;
     }
   } else if (rigState === 'casting') {
-    if (rigStateT >= RIG_CAST_FRAMES) {
-      rigState = 'waiting';
-      rigStateT = 0;
-      rigWaitFrames = Math.floor(random(RIG_WAIT_FRAMES_MIN, RIG_WAIT_FRAMES_MAX));
-    }
-  } else if (rigState === 'waiting') {
-    // real proximity catch: any live hero fish that drifts within
-    // CATCH_RADIUS of the waiting hook gets caught and permanently removed
-    // — not a scripted pick, so this naturally gets rarer as the population
-    // thins (fewer fish around to swim past the hook at all)
-    const hx = hookWorldX(), hy = HOOK_CAST_Y;
-    let caughtIdx = -1, bestDist = CATCH_RADIUS;
-    for (let i = 0; i < heroFish.length; i++) {
-      const d = dist(heroFish[i].x, heroFish[i].y, hx, hy);
-      if (d < bestDist) { bestDist = d; caughtIdx = i; }
-    }
-    if (caughtIdx !== -1) {
-      const fish = heroFish[caughtIdx];
-      caughtFishName = fish.name;
-      caughtFishDispH = fish.h;
-      heroFish.splice(caughtIdx, 1);
-      applyCatchHealthPenalty(fish.h);
-      // mature fish already had its chance to reproduce — a juvenile
-      // replacement grows in after a delay. A juvenile catch is permanent.
-      if (fish.h >= HERO_FISH_MATURE_THRESHOLD) {
-        pendingRespawns.push({ framesLeft: Math.floor(random(HERO_FISH_RESPAWN_FRAMES_MIN, HERO_FISH_RESPAWN_FRAMES_MAX)) });
-      }
+    hookY = Math.min(hookY + HOOK_CAST_SPEED, HOOK_MAX_DEPTH_Y);
+    const caught = tryCatchAtHook(true);
+    if (caught || hookY >= HOOK_MAX_DEPTH_Y) {
       rigState = 'reeling';
-      rigStateT = 0;
-    } else if (rigStateT >= rigWaitFrames) {
-      caughtFishName = null; // nothing bit this time — hook comes back up empty
-      rigState = 'reeling';
-      rigStateT = 0;
     }
   } else if (rigState === 'reeling') {
-    if (rigStateT >= RIG_REEL_FRAMES) {
+    hookY = Math.max(hookY - HOOK_REEL_SPEED, HOOK_REST_Y);
+    tryCatchAtHook(false);
+    if (hookY <= HOOK_REST_Y) {
       rigState = 'moving';
-      rigStateT = 0;
-      caughtFishName = null;
+      caughtFishList = [];
       pickRigTarget();
     }
   }
 }
 
 // A little struggling wiggle while it dangles up on the line — purely
-// decorative, the sprite's own resting orientation is fine for this.
-// Drawn at the actual caught fish's own size (caughtFishDispH, set in
-// updateRig() at catch time) rather than a fixed size, so a tiny juvenile
-// visibly looks tiny on the hook and a big one looks big — CAUGHT_FISH_SIZE
-// (the pre-scaled buffer's own resolution) is set to the largest realistic
+// decorative, the sprite's own resting orientation is fine for this. Drawn
+// at the actual caught fish's own height so a tiny juvenile visibly looks
+// tiny on the hook and a bigger one looks bigger — CAUGHT_FISH_SIZE (the
+// pre-scaled buffer's own resolution) is set to the largest realistic
 // catch so this only ever scales down, never up.
-function drawCaughtFish(x, y) {
-  const cf = caughtFishBufs[caughtFishName];
-  const dispH = caughtFishDispH;
+function drawCaughtFish(fish, x, y, phase) {
+  const cf = caughtFishBufs[fish.name];
+  const dispH = fish.h;
   const dispW = dispH * (cf.w / cf.h);
   push();
   translate(x, y);
-  rotate(sin(frameCount * 0.6) * 0.18);
+  rotate(sin(frameCount * 0.6 + phase) * 0.18);
   imageMode(CENTER);
   image(cf.buf, 0, 0, dispW, dispH);
   pop();
 }
 
 function drawRig() {
-  const hookY = currentHookY();
   push();
   translate(rigX, 0);
   if (rigDir === -1) scale(-1, 1);
-  const hookX = drawFishingLine(hookY);
+  const hookX = drawFishingLine();
   drawImgDef(rodImg, localDef(ROD_IMG_DEF));
   drawImgDef(hookImg, { x: hookX, y: hookY, w: HOOK_IMG_DEF.w, h: HOOK_IMG_DEF.h });
-  if (rigState === 'reeling' && caughtFishName) {
-    drawCaughtFish(hookX + HOOK_IMG_DEF.w / 2, hookY + HOOK_IMG_DEF.h + 15);
-  }
+  // caught fish dangle in a small stack below the hook, most recent lowest
+  caughtFishList.forEach((fish, i) => {
+    drawCaughtFish(fish, hookX + HOOK_IMG_DEF.w / 2, hookY + HOOK_IMG_DEF.h + 15 + i * 20, i * 1.3);
+  });
   drawImgDef(bodyImg, localDef(BODY_IMG_DEF));
   drawImgDef(headImg, localDef(HEAD_IMG_DEF));
   drawImgDef(hand1Img, { x: localX(HAND_DEFS[0].x), y: HAND_DEFS[0].y, w: HAND_DEFS[0].d, h: HAND_DEFS[0].d });
