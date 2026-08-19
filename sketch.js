@@ -800,18 +800,6 @@ function draw() {
   drawHeroFishLayer();
   updateRig();
   drawRig();
-  drawDebugFPS(); // TEMPORARY — diagnosing a reported frame-drop feeling, remove once confirmed
-}
-
-function drawDebugFPS() {
-  push();
-  noStroke();
-  fill(0, 160);
-  rect(6, 6, 90, 26);
-  fill(255);
-  textSize(14);
-  text('FPS: ' + frameRate().toFixed(1), 14, 24);
-  pop();
 }
 
 function drawImgDef(img, def) {
