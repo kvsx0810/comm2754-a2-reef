@@ -180,10 +180,14 @@ const FISH_ASSET_FILES = {
   BackFish2: 'BackFish2.png',
   BackFish3: 'BackFish3.png'
 };
+// sizeMin/sizeMax is each layer's own displayed-height range (px) — overlap
+// a bit between tiers so the whole school's per-fish sizes span exactly
+// 20-48px end to end, back skewed toward 20 and front skewed toward 48,
+// rather than each layer being a fixed size with a multiplier on top.
 const FISH_LAYER_DEFS = {
-  back:  { count: 7, size: 28, speed: 0.55, opacity: 0.34, top: PALETTE.blackPearl[2], bottom: PALETTE.blackPearl[3] },
-  mid:   { count: 7, size: 38, speed: 0.90, opacity: 0.44, top: PALETTE.blackPearl[1], bottom: PALETTE.blackPearl[2] },
-  front: { count: 6, size: 48, speed: 1.30, opacity: 1.00, top: PALETTE.blackPearl[0], bottom: PALETTE.blackPearl[1] }
+  back:  { count: 7, sizeMin: 20, sizeMax: 30, speed: 0.55, opacity: 0.34, top: PALETTE.blackPearl[2], bottom: PALETTE.blackPearl[3] },
+  mid:   { count: 7, sizeMin: 26, sizeMax: 40, speed: 0.90, opacity: 0.44, top: PALETTE.blackPearl[1], bottom: PALETTE.blackPearl[2] },
+  front: { count: 6, sizeMin: 36, sizeMax: 48, speed: 1.30, opacity: 1.00, top: PALETTE.blackPearl[0], bottom: PALETTE.blackPearl[1] }
 };
 
 let stoneImgs = {};
@@ -303,13 +307,8 @@ function buildFishLayer(layerKey, def) {
     // neighboring lane's line
     const laneTop = band.top + i * laneH;
     const name = random(names);
-    // widened from (0.8, 1.2) — that range read as basically same-size fish
-    // within a layer, with only the per-layer base size (def.size) actually
-    // visible as a size difference. This makes individual fish in the same
-    // layer noticeably vary too, not just across depth tiers.
-    const z = random(0.6, 1.5);
     const nativeBuf = fishRecolored[layerKey][name];
-    const h = def.size * z;
+    const h = random(def.sizeMin, def.sizeMax);
     const w = h * (nativeBuf.width / nativeBuf.height);
     fish.push({
       x: random(CANVAS_W),
