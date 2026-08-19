@@ -231,14 +231,20 @@ const HERO_FISH_ASSET_FILES = {
   Fish1: 'Fish1.png',
   Fish2: 'Fish2.png'
 };
-const HERO_FISH_COUNT = 30;
+const HERO_FISH_COUNT = 15;
 const HERO_FISH_SIZE = 70; // px, reference height
 // Wide on purpose — reads as a real mix of small (juvenile) and large
 // (mature) fish, which matters for the health-penalty logic below: catching
 // a juvenile before it can reproduce is worse for the population than
 // catching an adult, so a caught fish's own size drives how much it costs.
 const HERO_FISH_SIZE_MIN = HERO_FISH_SIZE * 0.45;
-const HERO_FISH_SIZE_MAX = HERO_FISH_SIZE * 1.9;
+const HERO_FISH_SIZE_MAX = HERO_FISH_SIZE * 1.2;
+// A caught fish at or above this size already had its chance to reproduce,
+// so catching it is more sustainable — see the respawn logic in updateRig()
+// and spawnJuvenileFish() below. Below this size, a catch is permanent.
+const HERO_FISH_MATURE_THRESHOLD = (HERO_FISH_SIZE_MIN + HERO_FISH_SIZE_MAX) / 2;
+const HERO_FISH_RESPAWN_FRAMES_MIN = 150; // ~5s @ 30fps
+const HERO_FISH_RESPAWN_FRAMES_MAX = 300; // ~10s @ 30fps
 const HERO_FISH_SPEED = 1.3;
 const HERO_FISH_BAND = { top: HORIZON_Y + 40, bottom: HORIZON_Y + 280 };
 const CATCH_RADIUS = 45; // px, how close a fish has to drift to a waiting hook to bite
@@ -247,10 +253,12 @@ const CAUGHT_FISH_SIZE = 130; // px — pre-scale buffer resolution; actual draw
 // Reef/ecosystem "health": starts full, only ever goes down (SDG 14.4 is
 // about overfishing depleting stocks — there's no auto-recovery here, a
 // fully fished-out lake just stays empty). Every hero-fish catch costs some
-// health, more for a small/juvenile fish than a large/mature one. Health
-// drives two other systems purely visually: how much of the ambient
-// BackFish population is still rendered (drawFishLayer), and how sluggish
-// the reef's own sway animation reads (drawReefInstance) — the whole scene
+// health, more for a small/juvenile fish than a large/mature one — even a
+// mature catch that later respawns still costs some health, since the
+// fishing pressure itself is still degrading the ecosystem. Health drives
+// two other systems purely visually: how much of the ambient BackFish
+// population is still rendered (drawFishLayer), and how sluggish the
+// reef's own sway animation reads (drawReefInstance) — the whole scene
 // should feel like it's visibly losing life, not just the hero fish count.
 let reefHealth = 1.0;
 const REEF_HEALTH_PENALTY_SMALL = 0.06; // cost of catching the smallest fish
@@ -293,6 +301,7 @@ let fishRecolored = { back: {}, mid: {}, front: {} };
 let fishBack = [], fishMid = [], fishFront = [];
 let cloudBack = [], cloudFront = [];
 let heroFish = [];
+let pendingRespawns = []; // [{ framesLeft }] — one entry per mature catch waiting to spawn a new juvenile
 let reefBack = [], reefMid = [], reefFront = [];
 let bodyImg, headImg, hand1Img, hand2Img, mouthImg, boatImg, rodImg, hookImg;
 let blinkTimer = 90, blinking = false, blinkT = 0;
@@ -534,25 +543,45 @@ function drawCloudLayer(layer, def) {
 // ---- hero catchable fish (Fish1/Fish2) — always swimming, independent of
 // whatever the boat's rig is doing (see HERO_FISH_ASSET_FILES comment) ----
 
+function makeHeroFish(name, hMin, hMax) {
+  const img = heroFishImgs[name];
+  const h = random(hMin, hMax);
+  const w = h * (img.width / img.height);
+  return {
+    name, // needed at catch time — which sprite to show dangling on the hook
+    x: random(CANVAS_W),
+    y: random(HERO_FISH_BAND.top, HERO_FISH_BAND.bottom),
+    w, h,
+    buf: preScaleToDisplaySize(img, w, h),
+    dir: random() < 0.5 ? 1 : -1,
+    speedMul: random(0.85, 1.2)
+  };
+}
+
 function buildHeroFish() {
   const names = Object.keys(HERO_FISH_ASSET_FILES);
   const fish = [];
   for (let i = 0; i < HERO_FISH_COUNT; i++) {
-    const name = random(names);
-    const img = heroFishImgs[name];
-    const h = random(HERO_FISH_SIZE_MIN, HERO_FISH_SIZE_MAX);
-    const w = h * (img.width / img.height);
-    fish.push({
-      name, // needed at catch time — which sprite to show dangling on the hook
-      x: random(CANVAS_W),
-      y: random(HERO_FISH_BAND.top, HERO_FISH_BAND.bottom),
-      w, h,
-      buf: preScaleToDisplaySize(img, w, h),
-      dir: random() < 0.5 ? 1 : -1,
-      speedMul: random(0.85, 1.2)
-    });
+    fish.push(makeHeroFish(random(names), HERO_FISH_SIZE_MIN, HERO_FISH_SIZE_MAX));
   }
   return fish;
+}
+
+// A mature fish that gets caught already had its chance to reproduce, so
+// after its respawn delay elapses, a new juvenile (not a full-grown
+// replacement) takes its place — offspring start small.
+function spawnJuvenileFish() {
+  const names = Object.keys(HERO_FISH_ASSET_FILES);
+  return makeHeroFish(random(names), HERO_FISH_SIZE_MIN, HERO_FISH_MATURE_THRESHOLD);
+}
+
+function updateFishSpawns() {
+  for (let i = pendingRespawns.length - 1; i >= 0; i--) {
+    if (--pendingRespawns[i].framesLeft <= 0) {
+      pendingRespawns.splice(i, 1);
+      heroFish.push(spawnJuvenileFish());
+    }
+  }
 }
 
 function updateHeroFish() {
@@ -577,6 +606,7 @@ function drawHeroFishInstance(f) {
 }
 
 function drawHeroFishLayer() {
+  updateFishSpawns();
   updateHeroFish();
   heroFish.forEach(drawHeroFishInstance);
 }
@@ -946,6 +976,11 @@ function updateRig() {
       caughtFishDispH = fish.h;
       heroFish.splice(caughtIdx, 1);
       applyCatchHealthPenalty(fish.h);
+      // mature fish already had its chance to reproduce — a juvenile
+      // replacement grows in after a delay. A juvenile catch is permanent.
+      if (fish.h >= HERO_FISH_MATURE_THRESHOLD) {
+        pendingRespawns.push({ framesLeft: Math.floor(random(HERO_FISH_RESPAWN_FRAMES_MIN, HERO_FISH_RESPAWN_FRAMES_MAX)) });
+      }
       rigState = 'reeling';
       rigStateT = 0;
     } else if (rigStateT >= rigWaitFrames) {
