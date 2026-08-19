@@ -145,14 +145,18 @@ const REEF_PRESETS = {
   ]
 };
 
-// STRIPS raised and AMP cut way down from the first pass: these coral PNGs
-// have fine multi-pronged branch tips only a few px thick, and a 16px sway
-// swing sheared adjacent strips far enough apart to tear those thin tips
-// into disconnected floating fragments — reading as "pixelated" even though
-// the source resolution itself was fine. More/thinner strips plus a much
-// smaller swing keeps neighboring strips close enough to still read as one
-// continuous shape while swaying.
-const REEF_STRIPS = 50;
+// STRIPS was originally raised to 50 (from 30) alongside cutting AMP way
+// down, to fix thin multi-pronged coral branch tips tearing into
+// disconnected fragments when a large sway swing (16px) sheared adjacent
+// strips too far apart. AMP is much lower now (8, and further scaled down
+// by reefHealth vitality below) than the 16px that caused that originally,
+// so the strip count doesn't need to carry as much of the fix on its own —
+// dialed back down to 30, since each strip is its own image() draw call and
+// this was measured as the single biggest performance cost in the whole
+// scene (REEF_STRIPS x every reef instance x 3 layers, every frame). If
+// coral tips start tearing/pixelating again on sway, raise this back up
+// before touching AMP again.
+const REEF_STRIPS = 30;
 const REEF_SWAY_AMP = 8;
 const REEF_SWAY_SPEED = 0.034;
 // Preset sizes come straight from each placement's real Figma renderBounds
@@ -743,6 +747,15 @@ function drawReefInstance(inst) {
   const vitality = lerp(REEF_HEALTH_VITALITY_FLOOR, 1, reefHealth);
   const effSpeed = REEF_SWAY_SPEED * inst.speedMul * vitality * FRAME_TIME_SCALE;
 
+  // Each strip is already a modest scale from an oversampled source (see
+  // REEF_SLICE_OVERSAMPLE) — measured directly, paying 'high' (Lanczos)
+  // resampling on every one of up to ~400 tiny strip draws a frame (multiple
+  // instances x REEF_STRIPS, several times over across 3 layers) was
+  // consistently 2-2.5x more expensive than the rest of the entire scene
+  // combined, for a difference not worth it at this small a scale.
+  // Restored to 'high' for everything else after the loop.
+  drawingContext.imageSmoothingQuality = 'medium';
+
   for (let i = 0; i < REEF_STRIPS; i++) {
     const t = i / (REEF_STRIPS - 1); // 0 = base, 1 = tip
     const falloff = Math.pow(t, inst.stiffExp);
@@ -761,6 +774,8 @@ function drawReefInstance(inst) {
       0, srcYFromBottom, inst.buf.width, stripH
     );
   }
+
+  drawingContext.imageSmoothingQuality = 'high';
 }
 
 // Each layer's reef corals draw BEFORE that layer's rock — the rock then
