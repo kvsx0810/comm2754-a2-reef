@@ -190,14 +190,14 @@ const FISH_LAYER_DEFS = {
   front: { count: 6, sizeMin: 36, sizeMax: 48, speed: 1.30, opacity: 1.00, top: PALETTE.blackPearl[0], bottom: PALETTE.blackPearl[1] }
 };
 
-// Background clouds: 2 depth layers drifting slowly across the sky, each
-// with a gentle vertical bob so they read as floating rather than sliding.
-// Unlike the fish PNGs, these are exported already colored (a teal/navy
-// gradient that already matches the sky palette), so no recolor step is
-// needed — just scale down and place. The source export is "full HD"
-// (up to 2214x1080, bigger than the whole canvas), so the same
-// pre-scale-once-at-build-time treatment as the fish applies here too,
-// otherwise every cloud would redo a huge downscale every frame.
+// Background clouds: 2 depth layers drifting slowly across the sky (no
+// vertical motion — just a straight horizontal drift). Unlike the fish
+// PNGs, these are exported already colored (a teal/navy gradient that
+// already matches the sky palette), so no recolor step is needed — just
+// scale down and place. The source export is "full HD" (up to 2214x1080,
+// bigger than the whole canvas), so the same pre-scale-once-at-build-time
+// treatment as the fish applies here too, otherwise every cloud would redo
+// a huge downscale every frame.
 const CLOUD_ASSET_FILES = {
   Cloud1: 'Cloud1.png',
   Cloud2: 'Cloud2.png'
@@ -206,9 +206,13 @@ const CLOUD_LAYER_DEFS = {
   back:  { count: 3, widthMin: 160, widthMax: 240, speed: 0.12, opacity: 0.55 },
   front: { count: 3, widthMin: 230, widthMax: 340, speed: 0.22, opacity: 0.85 }
 };
-// Keeps clouds clear of the very top edge and away from the horizon line.
+// Keeps clouds clear of the very top edge.
 const CLOUD_SKY_TOP = HORIZON_Y * 0.16;
-const CLOUD_SKY_BOTTOM = HORIZON_Y * 0.72;
+// Must always stay above the character's head — computed per-cloud from its
+// own height (see buildCloudLayer) rather than a fixed constant, since
+// bigger clouds need more headroom than smaller ones to keep their bottom
+// edge clear of HEAD_IMG_DEF.y.
+const CLOUD_HEAD_CLEARANCE = 15;
 
 let stoneImgs = {};
 let kelps = [];
@@ -408,16 +412,16 @@ function buildCloudLayer(def) {
     const img = cloudImgs[random(names)];
     const w = random(def.widthMin, def.widthMax);
     const h = w * (img.height / img.width);
+    // bigger clouds need more headroom to keep their own bottom edge above
+    // the character's head — bound is per-cloud, not a fixed constant
+    const bottomBound = Math.max(CLOUD_SKY_TOP + 10, HEAD_IMG_DEF.y - CLOUD_HEAD_CLEARANCE - h / 2);
     clouds.push({
       x: random(CANVAS_W),
-      baseY: random(CLOUD_SKY_TOP, CLOUD_SKY_BOTTOM),
+      y: random(CLOUD_SKY_TOP, bottomBound),
       w, h,
       buf: cloudToDisplaySize(img, w, h),
       dir: random() < 0.5 ? 1 : -1,
-      speedMul: random(0.8, 1.2),
-      bobAmp: random(4, 10),
-      bobSpeed: random(0.006, 0.014),
-      phase: random(TWO_PI)
+      speedMul: random(0.8, 1.2)
     });
   }
   return clouds;
@@ -434,9 +438,8 @@ function updateCloudLayer(layer, def) {
 }
 
 function drawCloudInstance(c, def) {
-  const y = c.baseY + sin(frameCount * c.bobSpeed + c.phase) * c.bobAmp;
   push();
-  translate(c.x, y);
+  translate(c.x, c.y);
   imageMode(CENTER);
   tint(255, 255, 255, 255 * def.opacity);
   image(c.buf, 0, 0, c.w, c.h);
